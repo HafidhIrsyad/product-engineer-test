@@ -143,3 +143,30 @@ func TestIntegration_PayVsExpiry(t *testing.T) {
 	assert.GreaterOrEqual(t, expired, 3, "the race never went the way of expiry")
 	testdb.AssertInvariants(t, f.pool) // reserved = open orders: PAID keeps its stock, EXPIRED gave it back
 }
+
+// Stopping the sweeper waits for the round in progress: nothing is left half done.
+func TestIntegration_SweeperStopsAfterItsRound(t *testing.T) {
+	f := newFixture(t, map[string]int{"MGN-PROT-500": 30})
+	ctx := context.Background()
+	for range 30 {
+		o := f.newOrder(t, 1)
+		f.expireAt(t, o.ID, `now() - interval '1 minute'`)
+	}
+
+	sweeperCtx, stop := context.WithCancel(ctx)
+	finished := make(chan struct{})
+	go func() {
+		f.svc.RunExpirySweeper(sweeperCtx, 5*time.Millisecond)
+		close(finished)
+	}()
+	require.Eventually(t, func() bool { return f.count(t, `SELECT COUNT(*) FROM orders WHERE status = 'PENDING_PAYMENT'`) < 30 }, 5*time.Second, 5*time.Millisecond, "the sweeper started its round")
+	stop() // in the middle of a round
+
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sweeper did not stop")
+	}
+	// Every order is either expired with its stock back, or untouched: never half done.
+	testdb.AssertInvariants(t, f.pool)
+}

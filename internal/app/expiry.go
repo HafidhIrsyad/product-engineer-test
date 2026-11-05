@@ -57,6 +57,8 @@ func (s *Service) expireOne(ctx context.Context, id int64) (bool, error) {
 	return done && err == nil, err
 }
 
+// RunExpirySweeper runs ExpireDue and ResolveOversold every interval until ctx ends. It returns
+// only after the round in progress, if any, has finished.
 func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -66,14 +68,17 @@ func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n, err := s.ExpireDue(ctx)
-			if err != nil && ctx.Err() == nil {
+			// A round that has started always finishes: cancelling ctx stops the loop between rounds,
+			// never a transaction in the middle.
+			round := context.WithoutCancel(ctx)
+			n, err := s.ExpireDue(round)
+			if err != nil {
 				log.Error().Err(err).Msg("expiry sweeper round failed")
 			}
 			if n > 0 {
 				log.Info().Int("orders", n).Msg("expired unpaid orders")
 			}
-			if err := s.ResolveOversold(ctx); err != nil && ctx.Err() == nil {
+			if err := s.ResolveOversold(round); err != nil {
 				log.Error().Err(err).Msg("oversell sweep failed")
 			}
 		}

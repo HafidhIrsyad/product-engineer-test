@@ -4,6 +4,8 @@ app:
 http:
   port: 8080
   request_timeout: 10s
+  drain_delay: 0s        # behind a load balancer: seconds it needs to notice /healthz failing
+  shutdown_timeout: 15s  # running requests get this long to finish
 database:
   url: postgres://mgmi:mgmi@localhost:5433/mgmi?sslmode=disable
 log:

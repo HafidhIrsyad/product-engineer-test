@@ -19,6 +19,7 @@ services:
       MGMI_APP_ENV: local     # console logs + SQL query logs (ARCHITECTURE.md §5.2)
       MGMI_LOG_LEVEL: debug
       MGMI_DATABASE_URL: postgres://mgmi:mgmi@postgres:5432/mgmi?sslmode=disable
+    stop_grace_period: 30s # longer than http.shutdown_timeout + http.drain_delay, or Docker kills the API mid-shutdown
     ports:
       - "8080:8080"
     depends_on:

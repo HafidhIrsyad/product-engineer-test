@@ -179,3 +179,21 @@ func TestIntegration_OrderHTTP(t *testing.T) {
 		assert.Equal(t, http.StatusUnprocessableEntity, status)
 	})
 }
+
+// While draining, /healthz fails so a load balancer stops sending traffic; other routes still answer.
+func TestIntegration_HealthWhileDraining(t *testing.T) {
+	pool := testdb.Pool(t)
+	svc := app.NewService(testdb.Store(t, pool))
+	srv := httptest.NewServer(api.NewRouter(svc, zerolog.Nop(), config.HTTP{RequestTimeout: 5 * time.Second}))
+	t.Cleanup(srv.Close)
+	s := server{url: srv.URL, pool: pool}
+
+	status, body := s.get(t, "/healthz")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "ok", body["status"])
+
+	svc.Drain()
+	status, body = s.get(t, "/healthz")
+	assert.Equal(t, http.StatusServiceUnavailable, status)
+	assert.Equal(t, "shutting_down", body["status"])
+}

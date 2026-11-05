@@ -313,6 +313,8 @@ Prioritas: **env var `MGMI_*` > `config.yaml` > default**. `config.yaml` opsiona
 | `app.env` | `MGMI_APP_ENV` | `local` | `local` = log console + log SQL |
 | `http.port` | `MGMI_HTTP_PORT` | `8080` | |
 | `http.request_timeout` | `MGMI_HTTP_REQUEST_TIMEOUT` | `10s` | Untuk middleware `Timeout` |
+| `http.drain_delay` | `MGMI_HTTP_DRAIN_DELAY` | `0s` | Jeda antara `/healthz` mulai gagal dan server berhenti menerima koneksi (isi sesuai waktu load balancer mendeteksinya) |
+| `http.shutdown_timeout` | `MGMI_HTTP_SHUTDOWN_TIMEOUT` | `15s` | Waktu bagi request yang sedang berjalan untuk selesai, sebelum koneksi dipotong |
 | `database.url` | `MGMI_DATABASE_URL` | — | **Wajib.** API gagal start jika kosong. |
 | `log.level` | `MGMI_LOG_LEVEL` | `info` | `config.example.yaml` memakai `debug` agar log SQL terlihat |
 | `sweeper.interval` | `MGMI_SWEEPER_INTERVAL` | `30s` | Sweeper expiry (§12.7) |
@@ -403,6 +405,21 @@ sql:
           # - db_type: "serial_status"
           #   go_type: "github.com/HafidhIrsyad/product-engineer-test/internal/domain.SerialStatus"
 ```
+
+---
+
+### 6.1 Graceful shutdown
+
+`cmd/api/main.go` menangani `SIGINT`/`SIGTERM` (di Docker: `docker stop`, di Kubernetes: pod dihentikan) dengan urutan berikut:
+
+1. **Tidak siap:** `Service.Drain()` membuat `/healthz` menjawab 503 `shutting_down`, supaya load balancer berhenti mengirim request baru. Server masih menerima koneksi selama `http.drain_delay`.
+2. **Berhenti menerima koneksi, tunggu request berjalan:** `http.Server.Shutdown` dengan batas `http.shutdown_timeout`. Request yang sudah masuk diselesaikan, bukan dipotong.
+3. **Waktu habis:** koneksi yang tersisa ditutup paksa (`Server.Close`) dan proses keluar dengan error, supaya terlihat di log dan exit code.
+4. **Sweeper:** berhenti **di antara putaran**. Putaran yang sedang berjalan diselesaikan (`context.WithoutCancel`), jadi tidak ada order yang kedaluwarsa setengah jalan.
+5. **Pool database** ditutup paling akhir (`defer` pertama), setelah server dan sweeper selesai.
+6. **Sinyal kedua** langsung menghentikan proses (`signal.NotifyContext` dilepas setelah sinyal pertama), untuk kasus shutdown yang macet.
+
+`docker-compose.yml` memakai `stop_grace_period: 30s`, lebih panjang dari `drain_delay + shutdown_timeout`, agar Docker tidak mengirim `SIGKILL` di tengah shutdown. Dites di `cmd/api/main_test.go` (request berjalan selesai, drain sebelum berhenti, paksa tutup setelah timeout), `TestIntegration_SweeperStopsAfterItsRound`, dan `TestIntegration_HealthWhileDraining`.
 
 ---
 
@@ -1458,7 +1475,7 @@ Setiap endpoint P0 digambar dulu sebagai **graf panggilan**, lalu kodenya dituli
 | R | Kebutuhan node | Dikirim lewat parameter: `api` menerima `*app.Service`, `app.Service` memegang `*store.Store`, dan transaksi berjalan lewat `store.InTx` yang memberi query sqlc terikat ke `pgx.Tx`. Dependensi yang lupa diisi = compile error. Waktu keputusan bisnis (kedaluwarsa, heartbeat, kunci status) diambil dari `now()` di DB. Satu-satunya pengecualian: waktu scan konsumen diambil dari jam aplikasi **dan disimpan sendiri** sebagai `scanned_at`, sehingga aturan R1 membandingkan dua nilai dari jam yang sama. |
 | Boundary | Data tidak tepercaya masuk | Hanya di `api`: decode JSON + validasi → tipe input `app`. `app` tidak memvalidasi ulang bentuk input. |
 | Behavior | Pembungkus | Middleware dipasang sekali di router: log request masuk dan selesai (zerolog `hlog`, §5.2), lalu `Recoverer` dan `Timeout` (chi). Tracer SQL dipasang di pool, bukan di modul. Tidak ada logging di dalam modul untuk jalur sukses. |
-| Scope | Acquire / release | `pgx.BeginFunc` (rollback dijamin), `context` menghentikan sweeper, pool ditutup saat shutdown. |
+| Scope | Acquire / release | `pgx.BeginFunc` (rollback dijamin). Shutdown berurutan (§6.1): sweeper dihentikan di antara putaran, pool ditutup paling akhir. |
 | Swap R | Bukti | Test integrasi mengganti R dengan PostgreSQL asli di container (§18.3). **Tidak ada mock DB**, karena race condition hanya terbukti di DB asli. Fungsi murni (aturan transisi, anomali, verdict) dites tanpa R. |
 
 **E di-scope per lapisan.** Setiap lapisan hanya menerjemahkan error dari lapisan tepat di bawahnya. Konsumen tidak pernah melihat error implementasi dari lapisan yang lebih dalam.

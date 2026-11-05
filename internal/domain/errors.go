@@ -28,6 +28,8 @@ var (
 	ErrProofRejected  = errors.New("proof of purchase rejected")
 	ErrAlreadyClaimed = errors.New("unit already claimed")
 
+	ErrShuttingDown = errors.New("shutting down")
+
 	ErrInvalidTransition = errors.New("invalid status transition")
 
 	ErrStaleStatus = errors.New("status changed by another process")

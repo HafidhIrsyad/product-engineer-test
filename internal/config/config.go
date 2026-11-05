@@ -25,8 +25,10 @@ type App struct {
 }
 
 type HTTP struct {
-	Port           int           `mapstructure:"port"`
-	RequestTimeout time.Duration `mapstructure:"request_timeout"`
+	Port            int           `mapstructure:"port"`
+	RequestTimeout  time.Duration `mapstructure:"request_timeout"`
+	DrainDelay      time.Duration `mapstructure:"drain_delay"`      // /healthz fails this long before the server stops listening
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"` // how long running requests may take to finish
 }
 
 type Database struct {
@@ -58,6 +60,8 @@ func Load() (Config, error) {
 	v.SetDefault("app.env", EnvLocal)
 	v.SetDefault("http.port", 8080)
 	v.SetDefault("http.request_timeout", "10s")
+	v.SetDefault("http.drain_delay", "0s")
+	v.SetDefault("http.shutdown_timeout", "15s")
 	v.SetDefault("database.url", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("sweeper.interval", "30s")
