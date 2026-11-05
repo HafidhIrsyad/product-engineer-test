@@ -14,6 +14,29 @@ sql:
           - db_type: "timestamptz"
             go_type: "time.Time"
           # PostgreSQL enums map straight to domain types (no duplicate types).
-          # Add each one together with its domain type, for example:
-          # - db_type: "serial_status"
-          #   go_type: "github.com/HafidhIrsyad/product-engineer-test/internal/domain.SerialStatus"
+          - db_type: "serial_status"
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "SerialStatus"
+          - db_type: "serial_level"
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "SerialLevel"
+          - db_type: "order_status"
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "OrderStatus"
+          - db_type: "movement_reason"
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "MovementReason"
+          - db_type: "location_type"
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "LocationType"
+          - db_type: "serial_status"
+            nullable: true
+            go_type:
+              import: "github.com/HafidhIrsyad/product-engineer-test/internal/domain"
+              type: "SerialStatus"
+              pointer: true

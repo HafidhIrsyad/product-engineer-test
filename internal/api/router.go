@@ -29,5 +29,10 @@ func NewRouter(svc *app.Service, logger zerolog.Logger, cfg config.HTTP) http.Ha
 	r.Use(middleware.Recoverer, middleware.Timeout(cfg.RequestTimeout))
 
 	r.Get("/healthz", h.health)
+	r.Route("/v1", func(r chi.Router) {
+		r.Post("/orders", h.createOrder)
+		r.Post("/orders/{id}/pay", h.payOrder)
+		r.Post("/orders/{id}/cancel", h.cancelOrder)
+	})
 	return r
 }

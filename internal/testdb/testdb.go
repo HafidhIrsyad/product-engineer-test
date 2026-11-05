@@ -3,7 +3,9 @@ package testdb
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -104,4 +106,75 @@ func AssertInvariants(t *testing.T, p *pgxpool.Pool) {
 		WHERE COALESCE(b.reserved, 0) <> COALESCE(r.qty, 0)`).Scan(&i2)
 	require.NoError(t, err)
 	require.Zero(t, i2, "I2 violated: reserved differs from open order quantities for %d (sku, location) pairs", i2)
+}
+
+// Store opens a store.Store on the same database as pool, without resetting it.
+func Store(t *testing.T, p *pgxpool.Pool) *store.Store {
+	t.Helper()
+	st, err := store.Open(context.Background(), p.Config().ConnString(), nil)
+	require.NoError(t, err)
+	t.Cleanup(st.Close)
+	return st
+}
+
+// serialCounter makes every generated serial code unique across tests.
+var serialCounter atomic.Int64
+
+// InsertWarehouse creates a central warehouse that can sell online, with no buffer.
+func InsertWarehouse(t *testing.T, p *pgxpool.Pool, code string) int64 {
+	t.Helper()
+	var id int64
+	err := p.QueryRow(context.Background(), `
+		INSERT INTO location (code, name, type, lat, lng, online_sellable)
+		VALUES ($1, $1, 'CENTRAL_WAREHOUSE', -6.2088, 106.8456, true)
+		RETURNING id`, code).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// InsertSKU creates a SKU and returns its id.
+func InsertSKU(t *testing.T, p *pgxpool.Pool, code string) int64 {
+	t.Helper()
+	var id int64
+	err := p.QueryRow(context.Background(), `
+		INSERT INTO sku (code, name, units_per_carton, cartons_per_pallet)
+		VALUES ($1, $1, 12, 40) RETURNING id`, code).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// SetStock puts n physical units of a SKU at a location: n UNIT serials in IN_WAREHOUSE plus the
+// matching on_hand counter, so invariant I1 holds.
+func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) {
+	t.Helper()
+	ctx := context.Background()
+
+	var batchID int64
+	require.NoError(t, p.QueryRow(ctx, `
+		INSERT INTO production_batch (code, sku_id, produced_at, expires_on)
+		VALUES ('B-' || $1::bigint || '-' || $2::bigint, $1::bigint, now(), current_date + 365)
+		ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
+		RETURNING id`, skuID, locationID).Scan(&batchID))
+
+	for range n {
+		code := fmt.Sprintf("MG%011d", serialCounter.Add(1))
+		_, err := p.Exec(ctx, `
+			INSERT INTO serial (code, level, sku_id, batch_id, status, location_id)
+			VALUES ($1, 'UNIT', $2, $3, 'IN_WAREHOUSE', $4)`, code, skuID, batchID, locationID)
+		require.NoError(t, err)
+	}
+	_, err := p.Exec(ctx, `
+		INSERT INTO stock_balance (sku_id, location_id, on_hand) VALUES ($1, $2, $3)
+		ON CONFLICT (sku_id, location_id) DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand`,
+		skuID, locationID, n)
+	require.NoError(t, err)
+}
+
+// Reserved returns the reserved counter of a SKU at a location.
+func Reserved(t *testing.T, p *pgxpool.Pool, skuID, locationID int64) int {
+	t.Helper()
+	var n int
+	require.NoError(t, p.QueryRow(context.Background(),
+		`SELECT reserved FROM stock_balance WHERE sku_id = $1 AND location_id = $2`, skuID, locationID).Scan(&n))
+	return n
 }

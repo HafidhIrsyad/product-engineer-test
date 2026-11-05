@@ -325,7 +325,7 @@ product-engineer-test/            # github.com/HafidhIrsyad/product-engineer-tes
 │   │   ├── queries/              #   *.sql sumber sqlc
 │   │   ├── migrate.go            #   Migrate(ctx, databaseURL)
 │   │   ├── store.go              #   Store: Open, InTx, Ping, Close
-│   │   ├── errors.go             #   pgconn 23505 / CHECK → error domain
+│   │   ├── errors.go             #   IsNotFound (pgx.ErrNoRows); error pgx lain → error domain ditambah saat dibutuhkan
 │   │   └── db.go, models.go, *.sql.go   # HASIL SQLC: di-commit, tidak diedit manual
 │   ├── api/                      # HTTP
 │   │   ├── router.go             #   NewRouter: chi + middleware + semua route
@@ -912,7 +912,7 @@ Alur:
 
 Penyederhanaan: satu order dipenuhi dari **satu lokasi**, dan lokasinya dipilih oleh klien (checkout D2C/marketplace sudah tahu gudang pengirimnya). Pemilihan lokasi otomatis dan split shipment di luar scope.
 
-Race pada idempotency key: dua request dengan key yang sama bersamaan → keduanya `INSERT`, yang kedua kena `UNIQUE` violation (menunggu yang pertama commit). Tangkap error `23505` → baca order yang sudah ada → kembalikan (200).
+Race pada idempotency key: dua request dengan key yang sama bersamaan → `INSERT ... ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`. Yang kedua **menunggu** sampai yang pertama commit, lalu tidak menyisipkan apa pun (0 baris). Transaksinya di-rollback, lalu order yang sudah ada dibaca dan dikembalikan (200). Tidak memakai tangkapan error `23505`, karena error di dalam transaksi PostgreSQL membuat seluruh transaksi tidak bisa dipakai lagi.
 
 ### 12.3 Mekanisme locking reservasi (inti pencegahan overselling)
 
@@ -1379,8 +1379,8 @@ Setiap endpoint P0 digambar dulu sebagai **graf panggilan**, lalu kodenya dituli
 
 ```ts
 pgx / sqlc
-  → pgconn 23505, CHECK 23514
-    → store/errors.go                 // error driver → error domain
+  → pgx.ErrNoRows, CHECK 23514
+    → store/errors.go                 // IsNotFound; error driver lain → error domain bila dibutuhkan
   → 0 baris pada conditional UPDATE
     → app                             // hasil bisnis → error domain
       → domain/errors.go: ErrInsufficientStock, ErrOrderNotFound, ErrOrderExpired, ErrInvalidOrderStatus,
@@ -1456,7 +1456,7 @@ TestIntegration_OrderHTTP (T21)
 |---|---|---|---|
 | `decodeCreateOrder` | Header tidak ada, qty ≤ 0, channel tidak dikenal | Escape | 422 |
 | `GetLocationByCode`, `GetSKUsByCode` | Kode tidak ada | Escape | 422 `UNKNOWN_LOCATION` / `UNKNOWN_SKU` |
-| `InsertOrder` | `23505` pada `idempotency_key` (request kembar bersamaan) | Escape | 200, order yang sudah ada |
+| `InsertOrder` | 0 baris pada `ON CONFLICT (idempotency_key) DO NOTHING` (request kembar bersamaan) | Escape | 200, order yang sudah ada |
 | `ReserveStock` | 0 baris | Escape | 409 `INSUFFICIENT_STOCK`, transaksi di-rollback |
 | Semua | `40P01` deadlock | Die | 500. Bug urutan kunci (§12.4), ditangkap T14. |
 | Semua | Error DB lain | Die | 500. Klien boleh retry dengan key yang sama. |

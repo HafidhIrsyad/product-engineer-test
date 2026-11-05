@@ -11,3 +11,11 @@ const (
 	OrderExpired           OrderStatus = "EXPIRED"
 	OrderNeedsReallocation OrderStatus = "NEEDS_REALLOCATION"
 )
+
+// Channel is the sales channel of an online order. Store stock is only for D2C (§12.3).
+type Channel string
+
+const (
+	ChannelD2C         Channel = "D2C"
+	ChannelMarketplace Channel = "MARKETPLACE"
+)
