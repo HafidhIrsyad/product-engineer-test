@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -69,10 +68,8 @@ func decodeCreateOrder(r *http.Request) (app.CreateOrderInput, error) {
 	}
 	in.IdempotencyKey = key
 
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
-		return in, fmt.Errorf("%w: body is not valid JSON for this request: %w", domain.ErrInvalidInput, err)
+	if err := decodeBody(r, &in); err != nil {
+		return in, err
 	}
 
 	if in.Channel != domain.ChannelD2C && in.Channel != domain.ChannelMarketplace {

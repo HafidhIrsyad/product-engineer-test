@@ -46,6 +46,14 @@ const orderBody = `{"channel":"D2C","location_code":"WH-JKT","items":[{"sku_code
 
 func (s server) post(t *testing.T, path, key, body string) (int, map[string]any) {
 	t.Helper()
+	status, raw := s.postRaw(t, path, key, body)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(raw, &out), "response must be JSON: %s", raw)
+	return status, out
+}
+
+func (s server) postRaw(t *testing.T, path, key, body string) (int, []byte) {
+	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, s.url+path, strings.NewReader(body))
 	require.NoError(t, err)
 	if key != "" {
@@ -56,10 +64,7 @@ func (s server) post(t *testing.T, path, key, body string) (int, map[string]any)
 	defer func() { _ = res.Body.Close() }()
 	raw, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-
-	var out map[string]any
-	require.NoError(t, json.Unmarshal(raw, &out), "response must be JSON: %s", raw)
-	return res.StatusCode, out
+	return res.StatusCode, raw
 }
 
 func errorCode(t *testing.T, body map[string]any) string {

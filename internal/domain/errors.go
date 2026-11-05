@@ -12,6 +12,7 @@ var (
 
 	ErrUnknownSKU      = errors.New("unknown sku")
 	ErrUnknownLocation = errors.New("unknown location")
+	ErrStoreNotFound   = errors.New("store not found") // unknown code, or not an OWN_STORE
 
 	ErrInsufficientStock   = errors.New("insufficient stock")
 	ErrOrderNotFound       = errors.New("order not found")

@@ -30,6 +30,8 @@ func classify(err error) (status int, code string) {
 		return http.StatusUnprocessableEntity, "UNKNOWN_LOCATION"
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return http.StatusNotFound, "ORDER_NOT_FOUND"
+	case errors.Is(err, domain.ErrStoreNotFound):
+		return http.StatusNotFound, "STORE_NOT_FOUND"
 	case errors.Is(err, domain.ErrInsufficientStock):
 		return http.StatusConflict, "INSUFFICIENT_STOCK"
 	case errors.Is(err, domain.ErrOrderExpired):

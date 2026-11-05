@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,4 +68,85 @@ func PayloadHash(t PosTxn) []byte {
 	}
 	sum := sha256.Sum256(b)
 	return sum[:]
+}
+
+// PosStatus is the result reported per transaction in a sync response (§13.2).
+type PosStatus string
+
+const (
+	PosAccepted           PosStatus = "ACCEPTED"
+	PosAcceptedWithIssues PosStatus = "ACCEPTED_WITH_ISSUES"
+	PosDuplicate          PosStatus = "DUPLICATE"
+	PosRejected           PosStatus = "REJECTED"
+)
+
+// PosIssue is why a scanned serial is not a valid sale at this store. The sale is still
+// recorded: money was taken and the unit left the shelf (§13.2).
+type PosIssue string
+
+const (
+	IssueSerialNotFound PosIssue = "SERIAL_NOT_FOUND"
+	IssueNotAUnit       PosIssue = "SERIAL_NOT_A_UNIT"
+	IssueSKUMismatch    PosIssue = "SERIAL_SKU_MISMATCH"
+	IssueNotAtStore     PosIssue = "SERIAL_NOT_AT_STORE"
+	IssueNotInStock     PosIssue = "SERIAL_NOT_IN_STOCK"
+)
+
+// PosRejection is why a transaction is technically invalid. The device must not retry it.
+type PosRejection string
+
+const (
+	RejectInvalidPayload PosRejection = "INVALID_PAYLOAD"
+	RejectUnknownSKU     PosRejection = "UNKNOWN_SKU"
+	RejectIDReused       PosRejection = "ID_REUSED_WITH_DIFFERENT_PAYLOAD"
+	RejectLocalSeqReused PosRejection = "LOCAL_SEQ_REUSED"
+)
+
+// Validate checks a transaction is technically well formed. Problems with the serials themselves
+// are not checked here: they never reject a sale (see PosIssue).
+func (t PosTxn) Validate() error {
+	switch {
+	case t.ID == uuid.Nil:
+		return fmt.Errorf("%w: transaction id is required", ErrInvalidInput)
+	case t.LocalSeq < 0:
+		return fmt.Errorf("%w: local_seq must not be negative", ErrInvalidInput)
+	case t.PaymentMethod != "CASH" && t.PaymentMethod != "CARD" && t.PaymentMethod != "QRIS":
+		return fmt.Errorf("%w: payment_method must be CASH, CARD or QRIS", ErrInvalidInput)
+	case t.TotalAmount < 0:
+		return fmt.Errorf("%w: total_amount must not be negative", ErrInvalidInput)
+	case len(t.Items) == 0:
+		return fmt.Errorf("%w: a transaction needs at least one item", ErrInvalidInput)
+	}
+	for i, it := range t.Items {
+		if it.SerialCode == "" || it.SKUCode == "" || it.Price < 0 {
+			return fmt.Errorf("%w: item %d needs serial_code, sku_code and a non-negative price", ErrInvalidInput, i+1)
+		}
+	}
+	return nil
+}
+
+// SerialSnapshot is what the database says about a scanned serial, at lock time.
+type SerialSnapshot struct {
+	Level      SerialLevel
+	SKUID      int64
+	LocationID int64
+	Status     SerialStatus
+}
+
+// ClassifyPosItem decides whether a scanned serial is a valid sale at a store (§13.3).
+// A nil snapshot means the code is not in the database. It returns "" when valid.
+func ClassifyPosItem(s *SerialSnapshot, wantSKUID, storeID int64) PosIssue {
+	switch {
+	case s == nil:
+		return IssueSerialNotFound
+	case s.Level != LevelUnit:
+		return IssueNotAUnit
+	case s.SKUID != wantSKUID:
+		return IssueSKUMismatch
+	case s.LocationID != storeID:
+		return IssueNotAtStore
+	case s.Status != SerialInStock:
+		return IssueNotInStock
+	}
+	return ""
 }

@@ -143,9 +143,27 @@ func InsertSKU(t *testing.T, p *pgxpool.Pool, code string) int64 {
 	return id
 }
 
-// SetStock puts n physical units of a SKU at a location: n UNIT serials in IN_WAREHOUSE plus the
-// matching on_hand counter, so invariant I1 holds.
-func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) {
+// InsertStore creates an own store that can sell online, with the given buffer.
+func InsertStore(t *testing.T, p *pgxpool.Pool, code string, buffer int) int64 {
+	t.Helper()
+	var id int64
+	err := p.QueryRow(context.Background(), `
+		INSERT INTO location (code, name, type, lat, lng, online_sellable, online_buffer)
+		VALUES ($1, $1, 'OWN_STORE', -6.9175, 107.6191, true, $2)
+		RETURNING id`, code, buffer).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// SetStock puts n physical units in a warehouse: n UNIT serials in IN_WAREHOUSE plus the
+// matching on_hand counter, so invariant I1 holds. It returns the serial codes.
+func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) []string {
+	t.Helper()
+	return SetStockAs(t, p, skuID, locationID, n, "IN_WAREHOUSE")
+}
+
+// SetStockAs is SetStock with an explicit serial status (IN_STOCK for stores).
+func SetStockAs(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int, status string) []string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -156,18 +174,21 @@ func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) {
 		ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
 		RETURNING id`, skuID, locationID).Scan(&batchID))
 
+	codes := make([]string, 0, n)
 	for range n {
 		code := fmt.Sprintf("MG%011d", serialCounter.Add(1))
 		_, err := p.Exec(ctx, `
 			INSERT INTO serial (code, level, sku_id, batch_id, status, location_id)
-			VALUES ($1, 'UNIT', $2, $3, 'IN_WAREHOUSE', $4)`, code, skuID, batchID, locationID)
+			VALUES ($1, 'UNIT', $2, $3, $4::serial_status, $5)`, code, skuID, batchID, status, locationID)
 		require.NoError(t, err)
+		codes = append(codes, code)
 	}
 	_, err := p.Exec(ctx, `
 		INSERT INTO stock_balance (sku_id, location_id, on_hand) VALUES ($1, $2, $3)
 		ON CONFLICT (sku_id, location_id) DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand`,
 		skuID, locationID, n)
 	require.NoError(t, err)
+	return codes
 }
 
 // Reserved returns the reserved counter of a SKU at a location.

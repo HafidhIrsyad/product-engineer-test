@@ -23,6 +23,7 @@ func TestClassify(t *testing.T) {
 		{domain.ErrUnknownSKU, http.StatusUnprocessableEntity, "UNKNOWN_SKU"},
 		{domain.ErrUnknownLocation, http.StatusUnprocessableEntity, "UNKNOWN_LOCATION"},
 		{domain.ErrOrderNotFound, http.StatusNotFound, "ORDER_NOT_FOUND"},
+		{domain.ErrStoreNotFound, http.StatusNotFound, "STORE_NOT_FOUND"},
 		{domain.ErrInsufficientStock, http.StatusConflict, "INSUFFICIENT_STOCK"},
 		{domain.ErrOrderExpired, http.StatusConflict, "ORDER_EXPIRED"},
 		{domain.ErrInvalidOrderStatus, http.StatusConflict, "INVALID_ORDER_STATUS"},

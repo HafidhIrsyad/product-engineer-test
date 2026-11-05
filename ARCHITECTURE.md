@@ -1161,7 +1161,7 @@ sequenceDiagram
     P->>API: POST /v1/pos/sync (batch)
     loop setiap transaksi, urut local_seq
         API->>DB: BEGIN
-        API->>DB: INSERT pos_transaction ... ON CONFLICT (id) DO NOTHING
+        API->>DB: INSERT pos_transaction ... ON CONFLICT DO NOTHING
         alt RowsAffected = 0 (sudah ada)
             API->>DB: SELECT payload_hash, result WHERE id = $1
             Note over API: hash sama → DUPLICATE<br/>hash beda → REJECTED (ID_REUSED)
@@ -1213,8 +1213,12 @@ INSERT INTO pos_transaction (
     sqlc.arg(occurred_at), sqlc.arg(payload_hash), sqlc.arg(total_amount),
     sqlc.arg(payment_method), 'ACCEPTED'   -- diperbarui di akhir jika ada issue
 )
-ON CONFLICT (id) DO NOTHING;
+-- Tanpa target: menutup KEDUA kunci unik, yaitu id (retry) dan (device_id, local_seq) (bug perangkat).
+-- Konflik tidak menyisipkan apa pun dan tidak membuat error, jadi transaksi tetap bisa dipakai.
+ON CONFLICT DO NOTHING;
 ```
+
+Setelah 0 baris: `SELECT` by `id`. Ada dan hash sama → `DUPLICATE`; ada dan hash beda → `REJECTED` (`ID_REUSED_WITH_DIFFERENT_PAYLOAD`); tidak ada (berarti `(device_id, local_seq)` yang bentrok) → `REJECTED` (`LOCAL_SEQ_REUSED`).
 
 **Kenapa stok dipotong hanya untuk serial yang valid:** jika serial menurut data tidak ada di toko ini, kita tidak tahu angka mana yang salah. Mungkin data pengiriman salah, mungkin kode dikloning. Aturannya sederhana: stok hanya berubah jika serialnya berubah, jadi I1 (§11.2) selalu benar. Serial bermasalah masuk `anomaly`, lalu ops memperbaikinya lewat penyesuaian terkontrol.
 
@@ -1233,7 +1237,7 @@ Pada saat yang sama, server masih melihat ATP = 1 dan menerima order online yang
 2. **Tx2:** untuk setiap SKU di batch, ulangi sampai tidak ada kekurangan. **Satu transaksi per order yang dikorbankan:**
    1. `pg_advisory_xact_lock(location_id)`: hanya satu Tx2 per toko pada satu waktu. Tanpa ini, dua sync bersamaan bisa sama-sama melihat kekurangan 1 dan mengorbankan 2 order.
    2. Hitung `shortfall = reserved − (on_hand − quarantine)`. Jika ≤ 0 → selesai.
-   3. Ambil order **terbaru** di lokasi itu (status `PENDING_PAYMENT`/`PAID`, berisi SKU tersebut) dengan `FOR UPDATE`. Jika tidak ada → selesai.
+   3. Pilih order **terbaru** di lokasi itu (status `PENDING_PAYMENT`/`PAID`, berisi SKU tersebut) tanpa kunci, lalu kunci dengan `LockOrder` dan **cek ulang statusnya**. Jika sudah bukan `PENDING_PAYMENT`/`PAID` (dibatalkan saat menunggu kunci) → pilih lagi. Jika tidak ada kandidat → selesai.
    4. Lepas **seluruh** reservasinya (semua item, urut `sku_id`, alasan `RELEASE`), ubah status → `NEEDS_REALLOCATION`, catat `anomaly` `OVERSOLD`.
 3. P2 / produksi: worker mencoba mereservasi ulang order itu di lokasi lain dengan `ReserveStock`. Jika gagal → tawarkan ke pelanggan: backorder, atau batal + refund otomatis + voucher.
 
@@ -1250,10 +1254,11 @@ FROM orders o
 JOIN order_item oi ON oi.order_id = o.id AND oi.sku_id = sqlc.arg(sku_id)
 WHERE o.location_id = sqlc.arg(location_id)
   AND o.status IN ('PENDING_PAYMENT', 'PAID')
-ORDER BY o.created_at DESC
-LIMIT 1
-FOR UPDATE OF o;
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT 1;  -- tanpa FOR UPDATE: lihat catatan di bawah
 ```
+
+**Kenapa kandidat dipilih tanpa kunci:** `SELECT ... LIMIT 1 FOR UPDATE` mengembalikan 0 baris jika kandidat dibatalkan saat menunggu kunci, walau masih ada kandidat lain. Memilih dulu, lalu mengunci dan mengecek ulang status, tidak punya masalah itu.
 
 **Kenapa order terbaru yang dikorbankan:** order lama sudah lebih lama menunggu dan lebih mungkin sudah dibayar dan dalam proses picking. Mengorbankan order terbaru meminimalkan gangguan. Aturan ini adalah **kebijakan bisnis** dan bisa diganti (misalnya: korbankan order yang belum dibayar dulu).
 
@@ -1345,11 +1350,11 @@ Semua path berawalan `/v1`. Format error seragam:
 | `POST` | `/v1/orders` | P0 | Buat order + reservasi | 201 (baru), 200 (idempotency key sama) | 409 `INSUFFICIENT_STOCK`; 422 (termasuk `UNKNOWN_LOCATION`, `UNKNOWN_SKU`) |
 | `POST` | `/v1/orders/{id}/pay` | P0 | Mock pembayaran | 200 (termasuk jika sudah dibayar) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_EXPIRED`, `INVALID_ORDER_STATUS` |
 | `POST` | `/v1/orders/{id}/cancel` | P0 | Batal + lepas stok | 200 (termasuk jika sudah batal/kedaluwarsa) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_NOT_CANCELLABLE` |
-| `POST` | `/v1/pos/sync` | P0 | Rekonsiliasi transaksi offline | 200 (hasil per transaksi) | 422 jika seluruh body tidak valid |
+| `POST` | `/v1/pos/sync` | P0 | Rekonsiliasi transaksi offline | 200 (hasil per transaksi, urut `local_seq`) | 404 `STORE_NOT_FOUND`; 422 jika amplop body tidak valid. Transaksi yang rusak secara teknis tidak menggagalkan batch: hasilnya `REJECTED`. |
 | `POST` | `/v1/orders/{id}/fulfill` | P1 | Scan serial → `SOLD` | 200 | 404, 409, 422 |
 | `POST` | `/v1/shipments/ship` | P2 | Kirim pallet/karton | 200 | 409 `INVALID_SERIAL_STATUS` |
 | `POST` | `/v1/shipments/receive` | P2 | Terima pallet/karton | 200 | 409 |
-| `POST` | `/v1/pos/heartbeat` | P0 | Tandai perangkat POS online (`store_code`, `device_id`) | 204 | 404 toko tidak ditemukan; 409 `DEVICE_STORE_MISMATCH` |
+| `POST` | `/v1/pos/heartbeat` | P0 | Tandai perangkat POS online (`store_code`, `device_id`) | 204 | 404 `STORE_NOT_FOUND`; 409 `DEVICE_STORE_MISMATCH`; 422 |
 | `GET` | `/v1/stock?sku=&location=` | P2 | Lihat ATP | 200 | 404 |
 | `GET` | `/healthz` | P0 | Health check (ping DB) | 200 | 503 |
 
@@ -1519,7 +1524,7 @@ POST /v1/pos/sync (api)
   → decodePosSync                    // batas: UUID, local_seq, items; hash kanonik dihitung di sini
   → app.SyncPOS
     → per transaksi, urut local_seq: pgx.BeginFunc                  // Tx1 (§13.3)
-      → InsertPosTransaction         // ON CONFLICT (id) DO NOTHING
+      → InsertPosTransaction         // ON CONFLICT DO NOTHING
       → GetPosTransaction            // hanya jika konflik: bandingkan payload_hash
       → LockSerialsByCodes           // satu query, ORDER BY id
       → TransitionSerial (IN_STOCK → SOLD), per item valid
@@ -1529,7 +1534,8 @@ POST /v1/pos/sync (api)
     → per SKU di batch, ulangi sampai tidak ada kekurangan: pgx.BeginFunc   // Tx2 (§13.5)
       → pg_advisory_xact_lock (toko)
       → GetShortfall
-      → PickOversellVictim           // FOR UPDATE
+      → PickOversellVictim           // tanpa kunci
+      → LockOrder                    // kunci + cek ulang status
       → app.release                // semua item order itu
       → SetOrderStatus (NEEDS_REALLOCATION), InsertAnomaly (OVERSOLD)
   → 200 results[]
@@ -1550,7 +1556,7 @@ TestPayloadHash (unit: T17)
 | `decodePosSync` | Body rusak | Escape | 422 untuk seluruh request |
 | `InsertPosTransaction` | Konflik, hash sama | Escape | `DUPLICATE` untuk transaksi itu |
 | `InsertPosTransaction` | Konflik, hash beda | Escape | `REJECTED` `ID_REUSED_WITH_DIFFERENT_PAYLOAD` |
-| `InsertPosTransaction` | `23505` pada `(device_id, local_seq)` | Escape | `REJECTED` untuk transaksi itu |
+| `InsertPosTransaction` | 0 baris, `id` tidak ada saat dibaca (berarti `(device_id, local_seq)` bentrok) | Escape | `REJECTED` (`LOCAL_SEQ_REUSED`) |
 | Validasi serial | Serial tidak di toko / status salah | Escape | `ACCEPTED_WITH_ISSUES` + anomali |
 | Tx1 | Error DB lain | Die | 500 untuk batch. POS mengirim ulang; transaksi yang sudah commit menjadi `DUPLICATE`. |
 | Tx2 | Error apa pun | Die | 500. POS mengirim ulang; Tx2 berjalan lagi. |
@@ -1573,7 +1579,7 @@ POST /v1/pos/heartbeat (api)
 
 | Node | E | Jenis | Hasil |
 |---|---|---|---|
-| `GetLocationByCode` | Tidak ada, atau bukan `OWN_STORE` | Escape | 404 |
+| `GetLocationByCode` | Tidak ada, atau bukan `OWN_STORE` | Escape | 404 `STORE_NOT_FOUND` |
 | `TouchHeartbeat` | `device_id` terdaftar di toko lain (0 baris) | Escape | 409 `DEVICE_STORE_MISMATCH` |
 
 R: `*store.Store`.

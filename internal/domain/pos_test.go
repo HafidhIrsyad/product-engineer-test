@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -79,4 +80,54 @@ func TestPayloadHash(t *testing.T) {
 		second.Items = []domain.PosItem{b, a}
 		assert.NotEqual(t, domain.PayloadHash(first), domain.PayloadHash(second))
 	})
+}
+
+func TestPosTxn_Validate(t *testing.T) {
+	valid := func() domain.PosTxn { return decodeTxn(t, baseTxn) }
+	require.NoError(t, valid().Validate())
+
+	tests := map[string]func(*domain.PosTxn){
+		"nil id":             func(x *domain.PosTxn) { x.ID = uuid.Nil },
+		"negative local_seq": func(x *domain.PosTxn) { x.LocalSeq = -1 },
+		"unknown payment":    func(x *domain.PosTxn) { x.PaymentMethod = "BARTER" },
+		"negative total":     func(x *domain.PosTxn) { x.TotalAmount = -1 },
+		"no items":           func(x *domain.PosTxn) { x.Items = nil },
+		"empty serial code":  func(x *domain.PosTxn) { x.Items[0].SerialCode = "" },
+		"negative price":     func(x *domain.PosTxn) { x.Items[0].Price = -1 },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			txn := valid()
+			mutate(&txn)
+			require.ErrorIs(t, txn.Validate(), domain.ErrInvalidInput)
+		})
+	}
+}
+
+func TestClassifyPosItem(t *testing.T) {
+	const sku, store = 1, 10
+	ok := domain.SerialSnapshot{Level: domain.LevelUnit, SKUID: sku, LocationID: store, Status: domain.SerialInStock}
+	with := func(mutate func(*domain.SerialSnapshot)) *domain.SerialSnapshot {
+		s := ok
+		mutate(&s)
+		return &s
+	}
+	tests := []struct {
+		name string
+		snap *domain.SerialSnapshot
+		want domain.PosIssue
+	}{
+		{"valid", &ok, ""},
+		{"code not in database", nil, domain.IssueSerialNotFound},
+		{"a carton, not a unit", with(func(s *domain.SerialSnapshot) { s.Level = domain.LevelCarton }), domain.IssueNotAUnit},
+		{"different sku", with(func(s *domain.SerialSnapshot) { s.SKUID = 2 }), domain.IssueSKUMismatch},
+		{"at another location", with(func(s *domain.SerialSnapshot) { s.LocationID = 11 }), domain.IssueNotAtStore},
+		{"already sold", with(func(s *domain.SerialSnapshot) { s.Status = domain.SerialSold }), domain.IssueNotInStock},
+		{"still in transit", with(func(s *domain.SerialSnapshot) { s.Status = domain.SerialInTransit }), domain.IssueNotInStock},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, domain.ClassifyPosItem(tt.snap, sku, store))
+		})
+	}
 }

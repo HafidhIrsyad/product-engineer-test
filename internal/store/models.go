@@ -247,11 +247,11 @@ func (ns NullSerialStatus) Value() (driver.Value, error) {
 type Anomaly struct {
 	ID         int64
 	Type       string
-	SerialID   pgtype.Int8
-	LocationID pgtype.Int8
-	PartnerID  pgtype.Int8
-	RefType    pgtype.Text
-	RefID      pgtype.Text
+	SerialID   *int64
+	LocationID *int64
+	PartnerID  *int64
+	RefType    *string
+	RefID      *string
 	Details    []byte
 	CreatedAt  time.Time
 	ResolvedAt pgtype.Timestamptz
@@ -262,7 +262,7 @@ type Location struct {
 	Code           string
 	Name           string
 	Type           domain.LocationType
-	PartnerID      pgtype.Int8
+	PartnerID      *int64
 	Lat            float64
 	Lng            float64
 	OnlineSellable bool
@@ -319,10 +319,10 @@ type PosTransactionItem struct {
 	PosTransactionID uuid.UUID
 	LineNo           int32
 	SerialCode       string
-	SerialID         pgtype.Int8
+	SerialID         *int64
 	SkuID            int64
 	Price            int64
-	Issue            pgtype.Text
+	Issue            *string
 }
 
 type ProductionBatch struct {
@@ -335,11 +335,11 @@ type ProductionBatch struct {
 
 type ScanEvent struct {
 	ID        int64
-	SerialID  pgtype.Int8
+	SerialID  *int64
 	RawCode   string
 	DeviceID  string
-	Lat       pgtype.Float8
-	Lng       pgtype.Float8
+	Lat       *float64
+	Lng       *float64
 	Verdict   string
 	ScannedAt time.Time
 }
@@ -350,11 +350,11 @@ type Serial struct {
 	Level           domain.SerialLevel
 	SkuID           int64
 	BatchID         int64
-	ParentID        pgtype.Int8
+	ParentID        *int64
 	Status          domain.SerialStatus
 	LocationID      int64
-	PartnerID       pgtype.Int8
-	OrderID         pgtype.Int8
+	PartnerID       *int64
+	OrderID         *int64
 	FirstVerifiedAt pgtype.Timestamptz
 	UpdatedAt       time.Time
 }
@@ -364,10 +364,10 @@ type SerialEvent struct {
 	SerialID   int64
 	FromStatus *domain.SerialStatus
 	ToStatus   domain.SerialStatus
-	LocationID pgtype.Int8
-	PartnerID  pgtype.Int8
+	LocationID *int64
+	PartnerID  *int64
 	RefType    string
-	RefID      pgtype.Text
+	RefID      *string
 	CreatedAt  time.Time
 }
 
