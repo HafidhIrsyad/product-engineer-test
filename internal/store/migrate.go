@@ -21,7 +21,7 @@ func Migrate(ctx context.Context, databaseURL string) error {
 	if err != nil {
 		return fmt.Errorf("open db for migration: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // nothing useful to do if closing a one-off connection fails
 
 	goose.SetBaseFS(migrations)
 	if err := goose.SetDialect("postgres"); err != nil {
