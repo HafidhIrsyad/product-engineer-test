@@ -62,7 +62,7 @@ EXPIRES=$(date -u -v+1y +%F 2>/dev/null || date -u -d '+1 year' +%F)
 BATCH_CODE="B$(date +%s)"
 echo "print a batch of 2 pallets at the factory:"
 curl -sS -o /tmp/demo.batch -w '%{http_code}' -X POST "$BASE_URL/v1/production/batches" -H 'Content-Type: application/json' \
-  -d "{\"sku_code\":\"MGN-PROT-500\",\"batch_code\":\"$BATCH_CODE\",\"location_code\":\"FACTORY-01\",\"expires_on\":\"$EXPIRES\",\"pallets\":2,\"unit_labels\":true}"
+  -d "{\"sku_code\":\"MGN-PROT-500\",\"batch_code\":\"$BATCH_CODE\",\"location_code\":\"FACTORY-01\",\"expires_on\":\"$EXPIRES\",\"pallets\":2}"
 echo " pallets: $(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | wc -l | tr -d ' ')   $(grep -oE '"cartons":[0-9]+,"units":[0-9]+' /tmp/demo.batch)"
 PALLET_A=$(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | sed -n 1p | cut -d'"' -f4)
 PALLET_B=$(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | sed -n 2p | cut -d'"' -f4)
@@ -89,9 +89,9 @@ FULFILL_ID=$(sed -E 's/.*"id":([0-9]+).*/\1/' /tmp/demo.body)
 post "/v1/orders/$FULFILL_ID/pay" ''
 post "/v1/orders/$FULFILL_ID/fulfill" "{\"serial_codes\":[\"${UNITS[${#UNITS[@]}-1]}\"]}"
 echo "a buyer at Distributor Medan opens the pack and claims points with the code under the seal:"
-post /v1/points/claims '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
+post /v1/points/claims '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO00000402"}'
 echo "someone else tries the same unit, and someone guesses a code:"
-post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
-post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000401","inner_code":"GUESS123"}'
+post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000402","inner_code":"DEMO00000402"}'
+post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000401","inner_code":"GUESS1234567"}'
 echo "the member's points (they wait out a review window before they can be redeemed):"
 curl -sS "$BASE_URL/v1/points/members/7"; echo

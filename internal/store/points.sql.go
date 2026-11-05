@@ -8,8 +8,6 @@ package store
 import (
 	"context"
 	"time"
-
-	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 )
 
 const countRecentClaims = `-- name: CountRecentClaims :one
@@ -21,39 +19,6 @@ func (q *Queries) CountRecentClaims(ctx context.Context, memberID int64) (int32,
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
-}
-
-const getSerialForClaim = `-- name: GetSerialForClaim :one
-SELECT s.id, s.level, s.status, s.sku_id, s.location_id, s.inner_code_hash, l.type AS location_type
-FROM serial s
-JOIN location l ON l.id = s.location_id
-WHERE s.code = $1
-FOR UPDATE OF s
-`
-
-type GetSerialForClaimRow struct {
-	ID            int64
-	Level         domain.SerialLevel
-	Status        domain.SerialStatus
-	SkuID         int64
-	LocationID    int64
-	InnerCodeHash []byte
-	LocationType  domain.LocationType
-}
-
-func (q *Queries) GetSerialForClaim(ctx context.Context, code string) (GetSerialForClaimRow, error) {
-	row := q.db.QueryRow(ctx, getSerialForClaim, code)
-	var i GetSerialForClaimRow
-	err := row.Scan(
-		&i.ID,
-		&i.Level,
-		&i.Status,
-		&i.SkuID,
-		&i.LocationID,
-		&i.InnerCodeHash,
-		&i.LocationType,
-	)
-	return i, err
 }
 
 const insertPointClaim = `-- name: InsertPointClaim :one
@@ -134,6 +99,16 @@ func (q *Queries) ListMemberClaims(ctx context.Context, memberID int64) ([]ListM
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockMember = `-- name: LockMember :exec
+SELECT pg_advisory_xact_lock($1::bigint)
+`
+
+// Claims of one member are counted one at a time, so the velocity limit cannot be raced.
+func (q *Queries) LockMember(ctx context.Context, memberID int64) error {
+	_, err := q.db.Exec(ctx, lockMember, memberID)
+	return err
 }
 
 const setInnerCodeHashes = `-- name: SetInnerCodeHashes :exec

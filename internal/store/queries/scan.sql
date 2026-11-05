@@ -22,7 +22,7 @@ LIMIT 1;
 SELECT COUNT(DISTINCT se.device_id)::int FROM scan_event se
 WHERE se.serial_id = sqlc.arg(serial_id) AND se.device_id <> sqlc.arg(device_id)
   AND se.scanned_at >= COALESCE(
-      (SELECT MAX(e.created_at) FROM serial_event e WHERE e.serial_id = sqlc.arg(serial_id) AND e.to_status = 'SOLD'),
+      (SELECT MIN(e.created_at) FROM serial_event e WHERE e.serial_id = sqlc.arg(serial_id) AND e.to_status IN ('SOLD', 'VERIFIED')),
       'infinity'::timestamptz);
 
 -- name: CountScans :one

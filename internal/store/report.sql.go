@@ -90,7 +90,8 @@ SELECT l.code AS location_code, l.type AS location_type, k.code AS sku_code,
          WHERE x.level = 'UNIT' AND x.status = 'IN_TRANSIT' AND x.location_id = l.id AND x.sku_id = k.id)::int AS inbound,
        COALESCE((SELECT -SUM(m.delta_on_hand) FROM stock_movement m
          WHERE m.sku_id = k.id AND m.location_id = l.id
-           AND m.reason IN ('SALE_POS', 'SALE_ONLINE', 'SELL_OUT_INFERRED')
+           AND (m.reason IN ('SALE_POS', 'SALE_ONLINE', 'SELL_OUT_INFERRED')
+                OR (m.reason = 'SHIP_OUT' AND l.type IN ('CENTRAL_WAREHOUSE', 'HUB')))
            AND m.created_at >= now() - interval '14 days'), 0)::bigint AS sold_14d
 FROM places pl
 JOIN location l ON l.id = pl.location_id

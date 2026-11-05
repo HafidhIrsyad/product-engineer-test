@@ -15,7 +15,6 @@ type CreateBatchInput struct {
 	LocationCode string `json:"location_code"`
 	ExpiresOn    string `json:"expires_on"`
 	Pallets      int    `json:"pallets"`
-	UnitLabels   bool   `json:"unit_labels"` // also return every unit's code and its secret inner code (for the printer)
 }
 
 type BatchView struct {
@@ -25,7 +24,7 @@ type BatchView struct {
 	Pallets   []PalletView `json:"pallets"`
 	Cartons   int          `json:"cartons"`
 	Units     int          `json:"units"`
-	Labels    []UnitLabel  `json:"unit_labels,omitempty"`
+	Labels    []UnitLabel  `json:"unit_labels"`
 }
 
 type UnitLabel struct {
@@ -44,8 +43,8 @@ const dateLayout = "2006-01-02"
 // Everything starts as PRODUCED at the factory, so stock does not change.
 func (s *Service) CreateBatch(ctx context.Context, in CreateBatchInput) (BatchView, error) {
 	expires, err := time.Parse(dateLayout, in.ExpiresOn)
-	if err != nil || !expires.After(time.Now()) {
-		return BatchView{}, fmt.Errorf("%w: expires_on must be a future date (YYYY-MM-DD)", domain.ErrInvalidInput)
+	if err != nil || !expires.After(time.Now().AddDate(0, 0, 1)) {
+		return BatchView{}, fmt.Errorf("%w: expires_on must be a date at least a day ahead (YYYY-MM-DD)", domain.ErrInvalidInput)
 	}
 
 	var view BatchView
@@ -97,9 +96,7 @@ func (s *Service) CreateBatch(ctx context.Context, in CreateBatchInput) (BatchVi
 		}
 
 		view = BatchView{Code: in.BatchCode, SKU: in.SKUCode, ExpiresOn: in.ExpiresOn, Cartons: len(cartons), Units: len(units)}
-		if in.UnitLabels {
-			view.Labels = labels
-		}
+		view.Labels = labels // the only time the secret inner codes exist in clear: for the printer
 		cartonsOf := map[int64][]string{}
 		for _, c := range cartons {
 			cartonsOf[*c.ParentID] = append(cartonsOf[*c.ParentID], c.Code)

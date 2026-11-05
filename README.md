@@ -50,7 +50,7 @@ curl -s localhost:8080/v1/pos/sync -d '{"store_code":"STORE-BDG-01","device_id":
 The whole chain, from the factory to the consumer (`make demo` scenarios 5 and 6 do all of this):
 
 ```bash
-# Print a batch (the response lists the pallets; add "unit_labels":true to get every unit's code and secret inner code)
+# Print a batch (the response lists the pallets, and every unit's code with its secret inner code, once, for the printer)
 curl -s localhost:8080/v1/production/batches -d '{"sku_code":"MGN-PROT-500","batch_code":"B-NEW-1","location_code":"FACTORY-01","expires_on":"2028-01-01","pallets":1}'
 # Receive a pallet at the warehouse, ship it to the distributor, receive it there (use a pallet code from the response)
 curl -s localhost:8080/v1/shipments/receive -d '{"container_code":"<pallet>","location_code":"WH-JKT"}'
@@ -58,15 +58,15 @@ curl -s localhost:8080/v1/shipments/ship    -d '{"container_code":"<pallet>","to
 curl -s localhost:8080/v1/shipments/receive -d '{"container_code":"<pallet>","location_code":"DIST-MDN"}'
 curl -s localhost:8080/v1/serials/<pallet>            # trace: batch, location, partner, history
 
-# Order, pay, and let the picker scan the units; then the customer verifies one
-curl -s -X POST localhost:8080/v1/orders/1/fulfill -d '{"serial_codes":["MG..."]}'
+# Order, pay, and let the picker scan the units (create and pay a new order first; order 1 above was cancelled)
+curl -s -X POST localhost:8080/v1/orders/<id>/fulfill -d '{"serial_codes":["MG..."]}'
 
 # Quarantine and release one unit
 curl -s localhost:8080/v1/serials/MG00000000201/quarantine -d '{"reason":"seal broken"}'
 curl -s -X POST localhost:8080/v1/serials/MG00000000201/release
 
 # Loyalty: a buyer at the distributor claims points with the code under the seal
-curl -s localhost:8080/v1/points/claims -d '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
+curl -s localhost:8080/v1/points/claims -d '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO00000402"}'
 curl -s localhost:8080/v1/points/members/7
 
 # Command center

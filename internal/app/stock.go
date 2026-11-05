@@ -133,3 +133,32 @@ func ledger(ctx context.Context, q *store.Queries, l stockLine, m movement) erro
 		Reason: m.reason, RefType: m.refType, RefID: m.refID,
 	})
 }
+
+func fulfillStock(ctx context.Context, q *store.Queries, orderID, locationID int64, lines []stockLine) error {
+	for _, l := range lines {
+		n, err := q.FulfillStock(ctx, store.FulfillStockParams{Qty: l.qty, SkuID: l.skuID, LocationID: locationID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("fulfill: reservation for sku %d at location %d is missing: invariant I2 broken", l.skuID, locationID)
+		}
+		m := movement{locationID: locationID, deltaOnHand: -l.qty, deltaReserved: -l.qty, reason: domain.MovementSaleOnline, refType: "ORDER", refID: strconv.FormatInt(orderID, 10)}
+		if err := ledger(ctx, q, l, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func adjustQuarantine(ctx context.Context, q *store.Queries, row store.GetSerialForUpdateRow, delta int32, reason domain.MovementReason) error {
+	n, err := q.AdjustQuarantine(ctx, store.AdjustQuarantineParams{Delta: delta, SkuID: row.SkuID, LocationID: row.LocationID})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("quarantine: no stock_balance row for sku %d at location %d: invariant I1 broken", row.SkuID, row.LocationID)
+	}
+	m := movement{locationID: row.LocationID, deltaQuarantine: delta, reason: reason, refType: "QC", refID: fmt.Sprint(row.ID)}
+	return ledger(ctx, q, stockLine{skuID: row.SkuID}, m)
+}

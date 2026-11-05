@@ -12,7 +12,7 @@ import (
 )
 
 const getSerialForUpdate = `-- name: GetSerialForUpdate :one
-SELECT s.id, s.level, s.status, s.sku_id, s.location_id, l.type AS location_type
+SELECT s.id, s.level, s.status, s.sku_id, s.location_id, s.inner_code_hash, l.type AS location_type
 FROM serial s
 JOIN location l ON l.id = s.location_id
 WHERE s.code = $1
@@ -20,12 +20,13 @@ FOR UPDATE OF s
 `
 
 type GetSerialForUpdateRow struct {
-	ID           int64
-	Level        domain.SerialLevel
-	Status       domain.SerialStatus
-	SkuID        int64
-	LocationID   int64
-	LocationType domain.LocationType
+	ID            int64
+	Level         domain.SerialLevel
+	Status        domain.SerialStatus
+	SkuID         int64
+	LocationID    int64
+	InnerCodeHash []byte
+	LocationType  domain.LocationType
 }
 
 func (q *Queries) GetSerialForUpdate(ctx context.Context, code string) (GetSerialForUpdateRow, error) {
@@ -37,6 +38,7 @@ func (q *Queries) GetSerialForUpdate(ctx context.Context, code string) (GetSeria
 		&i.Status,
 		&i.SkuID,
 		&i.LocationID,
+		&i.InnerCodeHash,
 		&i.LocationType,
 	)
 	return i, err

@@ -88,8 +88,8 @@ func (s *Service) Ship(ctx context.Context, in ShipInput) (ShipmentView, error) 
 		if origin.Type == domain.LocationPartner {
 			return fmt.Errorf("%w: stock at a partner is not shipped from here", domain.ErrInvalidInput)
 		}
-		if dest.Type == domain.LocationFactory || dest.ID == c.locationID {
-			return fmt.Errorf("%w: the destination must be a different location, and not a factory", domain.ErrInvalidInput)
+		if dest.Type == domain.LocationFactory || dest.Type == domain.LocationCentralWarehouse || dest.ID == c.locationID {
+			return fmt.Errorf("%w: the destination must be a different location, and neither a factory nor a central warehouse", domain.ErrInvalidInput)
 		}
 		if err := moveSerials(ctx, q, c.ids, c.status, domain.SerialInTransit, dest.ID, dest.PartnerID, "SHIPMENT", in.ContainerCode); err != nil {
 			return err

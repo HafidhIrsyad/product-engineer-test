@@ -38,8 +38,8 @@ SELECT 'MG' || lpad(n::text, 11, '0'), 'UNIT',
        (SELECT id FROM sku WHERE code = v.sku), (SELECT id FROM production_batch WHERE sku_id = (SELECT id FROM sku WHERE code = v.sku)),
        v.status::serial_status, (SELECT id FROM location WHERE code = v.loc),
        CASE WHEN v.loc = 'DIST-MDN' THEN 1 END,
-       -- Demo only: the inner code of the units at the distributor is DEMO + the last 4 digits (DEMO0402).
-       CASE WHEN v.loc = 'DIST-MDN' THEN sha256(convert_to('DEMO0' || n::text, 'UTF8')) END
+       -- Demo only: the inner code of the units at the distributor is DEMO00000 + the last 3 digits (DEMO00000402).
+       CASE WHEN v.loc = 'DIST-MDN' THEN sha256(convert_to('DEMO00000' || n::text, 'UTF8')) END
 FROM (VALUES
     -- Demo 1, verify: three units already sold at the warehouse
     (1,   'MGN-PROT-500', 'SOLD',         'WH-JKT'),

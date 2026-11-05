@@ -24,7 +24,7 @@ type AdjustQuarantineParams struct {
 	LocationID int64
 }
 
-// delta +1 sets a unit apart, -1 brings it back. CHECK (quarantine <= on_hand) guards the upper end.
+// delta +1 sets a unit apart, -1 brings it back. CHECK (0 <= quarantine <= on_hand) guards both ends.
 func (q *Queries) AdjustQuarantine(ctx context.Context, arg AdjustQuarantineParams) (int64, error) {
 	result, err := q.db.Exec(ctx, adjustQuarantine, arg.Delta, arg.SkuID, arg.LocationID)
 	if err != nil {

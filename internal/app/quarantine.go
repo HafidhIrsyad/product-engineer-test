@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog"
+
 	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
 )
@@ -31,8 +33,9 @@ func (s *Service) Quarantine(ctx context.Context, code domain.SerialCode, reason
 	if err != nil {
 		return SerialTrace{}, err
 	}
+	// The unit is already set apart. If resolving fails, the periodic ResolveOversold sweep finishes it.
 	if err := s.resolveOversell(ctx, row.LocationID, row.SkuID); err != nil {
-		return SerialTrace{}, err
+		zerolog.Ctx(ctx).Error().Err(err).Msg("oversell resolution after quarantine failed")
 	}
 	return s.TraceSerial(ctx, code)
 }
@@ -43,6 +46,9 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, code domain.SerialCode)
 		row, err := lockUnit(ctx, q, code)
 		if err != nil {
 			return err
+		}
+		if row.Status != domain.SerialQuarantine {
+			return fmt.Errorf("%w: %s is not quarantined", domain.ErrInvalidTransition, row.Status)
 		}
 		to := domain.SerialInStock
 		if row.LocationType == domain.LocationCentralWarehouse {
@@ -71,16 +77,4 @@ func lockUnit(ctx context.Context, q *store.Queries, code domain.SerialCode) (st
 		return row, fmt.Errorf("%w: only a single unit can be quarantined, not a %s", domain.ErrInvalidInput, row.Level)
 	}
 	return row, nil
-}
-
-func adjustQuarantine(ctx context.Context, q *store.Queries, row store.GetSerialForUpdateRow, delta int32, reason domain.MovementReason) error {
-	n, err := q.AdjustQuarantine(ctx, store.AdjustQuarantineParams{Delta: delta, SkuID: row.SkuID, LocationID: row.LocationID})
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return fmt.Errorf("quarantine: no stock_balance row for sku %d at location %d: invariant I1 broken", row.SkuID, row.LocationID)
-	}
-	m := movement{locationID: row.LocationID, deltaQuarantine: delta, reason: reason, refType: "QC", refID: fmt.Sprint(row.ID)}
-	return ledger(ctx, q, stockLine{skuID: row.SkuID}, m)
 }

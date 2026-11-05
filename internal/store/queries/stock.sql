@@ -46,7 +46,7 @@ ON CONFLICT (sku_id, location_id)
 DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand, updated_at = now();
 
 -- name: AdjustQuarantine :execrows
--- delta +1 sets a unit apart, -1 brings it back. CHECK (quarantine <= on_hand) guards the upper end.
+-- delta +1 sets a unit apart, -1 brings it back. CHECK (0 <= quarantine <= on_hand) guards both ends.
 UPDATE stock_balance
 SET quarantine = quarantine + sqlc.arg(delta)::int,
     updated_at = now()

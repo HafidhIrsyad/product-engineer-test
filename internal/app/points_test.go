@@ -20,7 +20,7 @@ func atPartner(t *testing.T) (shipFixture, []app.UnitLabel) {
 	f := newShipFixture(t)
 	ctx := context.Background()
 	in := batchInput(1)
-	in.BatchCode, in.UnitLabels = "B-LABELS", true
+	in.BatchCode = "B-LABELS"
 	batch, err := f.svc.CreateBatch(ctx, in)
 	require.NoError(t, err)
 	require.Len(t, batch.Labels, 480+0)
@@ -109,6 +109,12 @@ func TestIntegration_ClaimPoints_Refused(t *testing.T) {
 	_, err := f.pool.Exec(ctx, `UPDATE serial SET status = 'QUARANTINE' WHERE code = $1`, labels[2].SerialCode)
 	require.NoError(t, err)
 	assert.ErrorIs(t, claim(labels[2].SerialCode, labels[2].InnerCode), domain.ErrProofRejected, "only stock sitting at the partner can be claimed")
+
+	var ownUnit string // sold and scanned at an own store: verified, but nobody claimed it
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT code FROM serial WHERE level = 'UNIT' AND location_id = (SELECT id FROM location WHERE code = 'FACTORY-01') ORDER BY id LIMIT 1`).Scan(&ownUnit))
+	_, err = f.pool.Exec(ctx, `UPDATE serial SET status = 'VERIFIED' WHERE code = $1`, ownUnit)
+	require.NoError(t, err)
+	assert.ErrorIs(t, claim(ownUnit, "ABCDEFGHJKMN"), domain.ErrProofRejected, "outside a partner a unit is never 'already claimed'")
 }
 
 // T46: ten members claim the same unit at the same moment: one gets the points. And a member who
@@ -145,5 +151,6 @@ func TestIntegration_ClaimPoints_Race(t *testing.T) {
 	}
 	assert.Equal(t, "PENDING", statuses[domain.MaxClaimsPerDay-1])
 	assert.Equal(t, "HELD", statuses[domain.MaxClaimsPerDay], "the 11th claim within a day is held for review")
+	assert.Equal(t, "HELD", statuses[domain.MaxClaimsPerDay+1], "and so is every later one")
 	testdb.AssertInvariants(t, f.pool)
 }

@@ -12,12 +12,12 @@ const (
 	ClaimReviewHours = 72 // points can be redeemed only after this review window
 	MaxClaimsPerDay  = 10 // more claims than this from one member are held for review
 
-	innerCodeLen = 8
+	InnerCodeLen = 12 // 60 bits: a leaked hash cannot be brute-forced
 )
 
 // NewInnerCode returns the random code printed under the seal of a unit.
 func NewInnerCode() string {
-	b := make([]byte, innerCodeLen)
+	b := make([]byte, InnerCodeLen)
 	_, _ = rand.Read(b) // crypto/rand.Read never returns an error
 	for i := range b {
 		b[i] = crockfordAlphabets[b[i]%32]

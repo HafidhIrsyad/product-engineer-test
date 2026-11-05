@@ -117,20 +117,3 @@ func sameUnitsAlreadyFulfilled(ctx context.Context, q *store.Queries, in Fulfill
 	}
 	return nil
 }
-
-func fulfillStock(ctx context.Context, q *store.Queries, orderID, locationID int64, lines []stockLine) error {
-	for _, l := range lines {
-		n, err := q.FulfillStock(ctx, store.FulfillStockParams{Qty: l.qty, SkuID: l.skuID, LocationID: locationID})
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return fmt.Errorf("fulfill: reservation for sku %d at location %d is missing: invariant I2 broken", l.skuID, locationID)
-		}
-		m := movement{locationID: locationID, deltaOnHand: -l.qty, deltaReserved: -l.qty, reason: domain.MovementSaleOnline, refType: "ORDER", refID: strconv.FormatInt(orderID, 10)}
-		if err := ledger(ctx, q, l, m); err != nil {
-			return err
-		}
-	}
-	return nil
-}

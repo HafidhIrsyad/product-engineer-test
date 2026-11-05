@@ -16,7 +16,7 @@ const countOtherScanDevices = `-- name: CountOtherScanDevices :one
 SELECT COUNT(DISTINCT se.device_id)::int FROM scan_event se
 WHERE se.serial_id = $1 AND se.device_id <> $2
   AND se.scanned_at >= COALESCE(
-      (SELECT MAX(e.created_at) FROM serial_event e WHERE e.serial_id = $1 AND e.to_status = 'SOLD'),
+      (SELECT MIN(e.created_at) FROM serial_event e WHERE e.serial_id = $1 AND e.to_status IN ('SOLD', 'VERIFIED')),
       'infinity'::timestamptz)
 `
 

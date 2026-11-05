@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/HafidhIrsyad/product-engineer-test/internal/app"
+	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 )
 
 func (h *handler) ship(w http.ResponseWriter, r *http.Request) {
@@ -12,6 +13,12 @@ func (h *handler) ship(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	code, err := domain.ParseSerialCode(in.ContainerCode)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	in.ContainerCode = string(code)
 	view, err := h.svc.Ship(r.Context(), in)
 	if err != nil {
 		writeError(w, r, err)
@@ -26,6 +33,12 @@ func (h *handler) receive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	code, err := domain.ParseSerialCode(in.ContainerCode)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	in.ContainerCode = string(code)
 	view, err := h.svc.Receive(r.Context(), in)
 	if err != nil {
 		writeError(w, r, err)

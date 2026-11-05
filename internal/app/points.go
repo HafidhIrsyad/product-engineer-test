@@ -29,7 +29,7 @@ type ClaimView struct {
 func (s *Service) ClaimPoints(ctx context.Context, in ClaimInput) (ClaimView, error) {
 	var view ClaimView
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
-		row, err := q.GetSerialForClaim(ctx, in.SerialCode)
+		row, err := q.GetSerialForUpdate(ctx, in.SerialCode)
 		// Unknown unit, wrong code and wrong kind of unit all look the same from outside.
 		if store.IsNotFound(err) || (err == nil && (row.Level != domain.LevelUnit || !domain.InnerCodeMatches(row.InnerCodeHash, in.InnerCode))) {
 			return domain.ErrProofRejected
@@ -37,10 +37,13 @@ func (s *Service) ClaimPoints(ctx context.Context, in ClaimInput) (ClaimView, er
 		if err != nil {
 			return err
 		}
-		if row.Status == domain.SerialVerified {
-			return domain.ErrAlreadyClaimed
+		if row.LocationType != domain.LocationPartner {
+			return domain.ErrProofRejected // own channels give points automatically (not built), not by claim
 		}
-		if row.Status != domain.SerialInStock || row.LocationType != domain.LocationPartner {
+		if row.Status == domain.SerialVerified {
+			return domain.ErrAlreadyClaimed // at a partner only a claim makes a unit VERIFIED
+		}
+		if row.Status != domain.SerialInStock {
 			return domain.ErrProofRejected
 		}
 
@@ -48,6 +51,9 @@ func (s *Service) ClaimPoints(ctx context.Context, in ClaimInput) (ClaimView, er
 			return err
 		}
 		if err := sellOutInferred(ctx, q, row.ID, row.LocationID, row.SkuID); err != nil {
+			return err
+		}
+		if err := q.LockMember(ctx, in.MemberID); err != nil {
 			return err
 		}
 		recent, err := q.CountRecentClaims(ctx, in.MemberID)

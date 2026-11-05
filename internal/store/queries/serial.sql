@@ -1,5 +1,5 @@
 -- name: GetSerialForUpdate :one
-SELECT s.id, s.level, s.status, s.sku_id, s.location_id, l.type AS location_type
+SELECT s.id, s.level, s.status, s.sku_id, s.location_id, s.inner_code_hash, l.type AS location_type
 FROM serial s
 JOIN location l ON l.id = s.location_id
 WHERE s.code = $1

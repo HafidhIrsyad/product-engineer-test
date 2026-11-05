@@ -86,6 +86,7 @@ func TestIntegration_Fulfill_Refused(t *testing.T) {
 
 	assert.Equal(t, 0, f.count(t, `SELECT COUNT(*) FROM serial WHERE status = 'SOLD'`))
 	assert.Equal(t, "PAID", f.orderStatus(t, paid.ID))
+	assert.Equal(t, 0, f.count(t, `SELECT COUNT(*) FROM stock_movement WHERE reason = 'SALE_ONLINE'`), "no stock left")
 }
 
 // T35: fulfill and cancel of the same order at the same time: exactly one wins.

@@ -72,7 +72,6 @@ LIMIT 1;
 -- name: ListOversold :many
 SELECT sb.location_id, sb.sku_id
 FROM stock_balance sb
-JOIN location l ON l.id = sb.location_id
 WHERE sb.reserved > sb.on_hand - sb.quarantine
 ORDER BY sb.location_id, sb.sku_id;
 

@@ -28,7 +28,7 @@
 | **1. Distribusi & Logistik** (Kebocoran Wilayah & Gray-Market Diversion) | Setiap pallet, karton, dan satuan punya QR unik dan diikat ke distributor saat dikirim. Data logistik dan scan konsumen menunjuk pallet yang bocor. Test-buy hanya mengonfirmasi. | Nilai subsidi yang bocor per bulan |
 | **2. CRM & Loyalty** (Poin Reward Konsumen & Anti-Fraud Scan) | **Verifikasi** keaslian dipisah dari **poin**. Kanal sendiri: poin masuk otomatis ke pembeli. Kanal mitra: poin hanya dengan kode lapis dalam atau struk. Scan QR luar tidak pernah membuat poin. | Nilai poin yang diberikan ke klaim fraud |
 | **3. Marketing** (Tracking Leads-to-Purchase: Iklan Instagram ke Penjualan Indomaret) | Solusi data hibrida: *dynamic claim voucher* / *geofencing promo*, insentif scan kemasan pasca-beli kasir, dan korelasi telemetri kenaikan distribusi per rayon yang diuji dengan eksperimen **geo-holdout**. Klaim kausalitas hanya dari eksperimen. | iROAS (margin inkremental ÷ biaya kampanye) |
-| **4. POS OwnStore** (Resiliensi Offline-First & Split-Brain Stok) | Kasir tetap jalan offline. Penjualan fisik **selalu diterima**. Order online yang kalah dialihkan otomatis atau dikompensasi dengan SLA jelas. | Biaya kompensasi + penjualan online yang hilang karena buffer |
+| **4. POS OwnStore** (Resiliensi Offline-First & Split-Brain Stok) | Kasir tetap jalan offline. Penjualan fisik **selalu diterima**. Order online yang kalah dilepas stoknya dan dialihkan oleh ops (manual di prototype; otomatis adalah desain) atau dikompensasi dengan SLA jelas. | Biaya kompensasi + penjualan online yang hilang karena buffer |
 
 Satu benang merah: **scan konsumen adalah aset data utama**. Scan yang sama dipakai untuk anti-counterfeit (Pilar A), deteksi gray market (Kasus 1), dan sinyal per wilayah untuk atribusi (Kasus 3). Karena itu insentif agar konsumen mau scan adalah investasi bersama beberapa kasus. Baseline semua metrik diukur di fase 1 rollout (bagian 9), lalu target ditetapkan dari baseline itu.
 
@@ -39,7 +39,7 @@ Satu benang merah: **scan konsumen adalah aset data utama**. Scan yang sama dipa
 | # | Asumsi | Jika salah |
 |---|---|---|
 | A1 | Setiap unit diberi stiker hologram ber-QR **di lini produksi**, dan karton serta pallet diberi QR saat dikemas. Hubungan **Pallet → Karton → Satuan** direkam oleh stasiun scan di ujung lini. | Agregasi (Kasus 1) tidak bisa dibuktikan. Perlu scan agregasi manual di gudang sebelum kirim. |
-| A2 | Gudang memindai QR pallet atau karton saat mengirim ke distributor, dan setiap pengiriman punya nomor surat jalan (DO) | `partner_id` tidak terikat, jadi kebocoran tidak bisa diatribusikan ke distributor |
+| A2 | Gudang memindai QR pallet atau karton saat mengirim ke distributor, dan setiap pengiriman punya nomor surat jalan (DO; di prototype `serial_event.ref_id` memuat kode container, kolom DO ditambahkan saat integrasi dengan sistem gudang) | `partner_id` tidak terikat, jadi kebocoran tidak bisa diatribusikan ke distributor |
 | A3 | Konsumen bisa memindai QR dengan kamera HP dan membuka halaman web, tanpa aplikasi | Coverage scan turun. Semua kasus yang bergantung pada scan melemah. |
 | A4 | **Scan coverage rendah**: hanya sebagian kecil unit terjual yang pernah dipindai konsumen. Angka pastinya diukur di fase 1. | Jika coverage tinggi, ambang deteksi bisa diperketat |
 | A5 | Kita punya data pengiriman ke **DC Indomaret** per **rayon** (di dokumen ini: area layanan satu DC), tetapi **tidak** punya data sell-out per toko Indomaret | Jika laporan sell-out supplier dari Indomaret bisa dibeli, Kasus 3 jauh lebih mudah |
@@ -77,7 +77,7 @@ Distributor daerah mendapat alokasi stok harga subsidi khusus, lalu menjualnya k
 ### 4.2 Membuktikan titik kebocoran distributor secara presisi tanpa inspeksi fisik manual
 
 **Langkah 1 — Ikat unit ke distributor saat barang keluar gudang.**
-Gudang memindai QR pallet (atau karton) saat mengirim. Karena serialisasi agregasi **Pallet → Karton → Satuan** sudah direkam di lini produksi (§8.2–8.3), satu scan itu mengikat **semua unit di dalamnya** ke distributor tujuan (`serial.partner_id`) dan ke nomor surat jalan. Petugas gudang tidak memindai unit satu per satu.
+Gudang memindai QR pallet (atau karton) saat mengirim. Karena serialisasi agregasi **Pallet → Karton → Satuan** sudah direkam di lini produksi (§8.2–8.3), satu scan itu mengikat **semua unit di dalamnya** ke distributor tujuan (`serial.partner_id`) dan ke pengiriman itu. Petugas gudang tidak memindai unit satu per satu.
 
 **Langkah 2 — Gabungkan dua sumber data.**
 
@@ -180,7 +180,7 @@ Sistem lama menyamakan **"memindai QR"** dengan **"memiliki barang"**. QR luar b
 | Satu serial diklaim berkali-kali | `UNIQUE (serial_id)` di tabel poin, dijaga database (§21) |
 | Satu struk dipakai untuk banyak klaim | Kunci struk = toko + nomor struk + waktu. Jumlah serial yang diklaim dengan struk yang sama ≤ jumlah unit di struk. |
 | Banyak akun dari satu perangkat | Klaim dari satu perangkat untuk banyak akun ditandai untuk ditinjau |
-| Klaim borongan | Batas kecepatan per member dan per titik lokasi (*contoh*: > 10 klaim/jam → `HELD`); batas poin per member per hari |
+| Klaim borongan | Batas kecepatan per member dan per titik lokasi (*contoh*: > 10 klaim per 24 jam → `HELD`); batas poin per member per hari |
 
 **Kelemahan yang diakui di kanal mitra:**
 
@@ -196,7 +196,7 @@ Sistem lama menyamakan **"memindai QR"** dengan **"memiliki barang"**. QR luar b
 stateDiagram-v2
     [*] --> PENDING : poin dibuat (otomatis atau klaim lolos)
     [*] --> HELD : melewati batas kecepatan
-    PENDING --> AVAILABLE : setelah 24–72 jam, tanpa anomali baru
+    PENDING --> AVAILABLE : setelah 72 jam
     HELD --> AVAILABLE : lolos tinjauan tim CRM
     HELD --> REVOKED : terbukti fraud
     PENDING --> REVOKED : retur / refund
@@ -205,7 +205,7 @@ stateDiagram-v2
     AVAILABLE --> [*] : hangus (contoh: 12 bulan)
 ```
 
-- **Pending 24–72 jam** (*contoh*) memberi waktu untuk menemukan anomali sebelum poin bisa ditukar.
+- **Pending 72 jam** (*contoh*) memberi waktu untuk menemukan anomali sebelum poin bisa ditukar.
 - **Retur atau refund** mencabut poin dari unit itu. Jika poin sudah ditukar, saldo member dikurangi.
 - **Masa berlaku** membatasi kewajiban poin yang menumpuk di neraca.
 
@@ -215,7 +215,7 @@ stateDiagram-v2
 |---|---|---|
 | Kode lapis dalam menambah biaya kemasan | Biaya produksi per unit naik (perlu dihitung dengan tim kemasan) | Hanya untuk SKU yang dijual di kanal mitra; mulai dari SKU dengan nilai poin terbesar |
 | Upload struk menambah langkah | Sebagian konsumen tidak jadi klaim | Klaim yang hilang adalah klaim berisiko tinggi |
-| Poin pending membuat konsumen menunggu | Pengalaman sedikit menurun | Komunikasikan dengan jelas: "Poin aktif dalam 48 jam" |
+| Poin pending membuat konsumen menunggu | Pengalaman sedikit menurun | Komunikasikan dengan jelas: "Poin aktif dalam 72 jam" |
 | Batas kecepatan bisa menahan pembeli grosir yang sah | False positive | `HELD` ditinjau manusia, bukan ditolak otomatis |
 | Member di OwnStore harus membuka aplikasi | Antrean kasir sedikit lebih lama | Tanpa ini, kasir bisa mengalihkan poin pembeli anonim |
 

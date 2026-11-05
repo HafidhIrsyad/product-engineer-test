@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/HafidhIrsyad/product-engineer-test/internal/app"
 	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
@@ -21,8 +22,8 @@ func (h *handler) claimPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.SerialCode = string(code)
-	if in.MemberID <= 0 || in.InnerCode == "" || len(in.InnerCode) > maxDeviceIDLen {
-		writeError(w, r, fmt.Errorf("%w: member_id and inner_code are required", domain.ErrInvalidInput))
+	if in.MemberID <= 0 || len(strings.TrimSpace(in.InnerCode)) != domain.InnerCodeLen {
+		writeError(w, r, fmt.Errorf("%w: member_id and a %d-character inner_code are required", domain.ErrInvalidInput, domain.InnerCodeLen))
 		return
 	}
 	view, err := h.svc.ClaimPoints(r.Context(), in)

@@ -109,8 +109,8 @@ func TestIntegration_OperationsHTTP(t *testing.T) {
 	})
 
 	t.Run("points", func(t *testing.T) {
-		expect(http.StatusUnprocessableEntity, "/v1/points/claims", `{"member_id":0,"serial_code":"`+codes[3]+`","inner_code":"X"}`, "INVALID_INPUT")
-		expect(http.StatusUnprocessableEntity, "/v1/points/claims", `{"member_id":1,"serial_code":"`+codes[3]+`","inner_code":"WRONG123"}`, "PROOF_REJECTED")
+		expect(http.StatusUnprocessableEntity, "/v1/points/claims", `{"member_id":0,"serial_code":"`+codes[3]+`","inner_code":"XXXXXXXXXXXX"}`, "INVALID_INPUT")
+		expect(http.StatusUnprocessableEntity, "/v1/points/claims", `{"member_id":1,"serial_code":"`+codes[3]+`","inner_code":"WRONG1234567"}`, "PROOF_REJECTED")
 		status, out := s.get(t, "/v1/points/members/1")
 		assert.Equal(t, http.StatusOK, status)
 		assert.Empty(t, out["claims"])
