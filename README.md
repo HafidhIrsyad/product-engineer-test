@@ -25,7 +25,7 @@ API: `http://localhost:8080`. Logs, including every SQL query (local only): `doc
 
 ## Try it while the service runs
 
-After `make up` and `make seed` the API is on `http://localhost:8080`. `make demo` runs the four presentation scenarios; the same calls by hand (seed codes are in `db/seed/seed.sql`):
+After `make up` and `make seed` the API is on `http://localhost:8080`. `make demo` runs six presentation scenarios, from verification and the order surge to a batch printed at the factory and loyalty points; the same calls by hand (seed codes are in `db/seed/seed.sql`):
 
 ```bash
 # Verify a unit (first scan after the sale), then a made-up code
@@ -47,6 +47,36 @@ curl -s localhost:8080/v1/pos/sync -d '{"store_code":"STORE-BDG-01","device_id":
   "items":[{"serial_code":"MG00000000102","sku_code":"MGN-PROT-500","price":450000}]}]}'
 ```
 
+The whole chain, from the factory to the consumer (`make demo` scenarios 5 and 6 do all of this):
+
+```bash
+# Print a batch (the response lists the pallets; add "unit_labels":true to get every unit's code and secret inner code)
+curl -s localhost:8080/v1/production/batches -d '{"sku_code":"MGN-PROT-500","batch_code":"B-NEW-1","location_code":"FACTORY-01","expires_on":"2028-01-01","pallets":1}'
+# Receive a pallet at the warehouse, ship it to the distributor, receive it there (use a pallet code from the response)
+curl -s localhost:8080/v1/shipments/receive -d '{"container_code":"<pallet>","location_code":"WH-JKT"}'
+curl -s localhost:8080/v1/shipments/ship    -d '{"container_code":"<pallet>","to_location_code":"DIST-MDN"}'
+curl -s localhost:8080/v1/shipments/receive -d '{"container_code":"<pallet>","location_code":"DIST-MDN"}'
+curl -s localhost:8080/v1/serials/<pallet>            # trace: batch, location, partner, history
+
+# Order, pay, and let the picker scan the units; then the customer verifies one
+curl -s -X POST localhost:8080/v1/orders/1/fulfill -d '{"serial_codes":["MG..."]}'
+
+# Quarantine and release one unit
+curl -s localhost:8080/v1/serials/MG00000000201/quarantine -d '{"reason":"seal broken"}'
+curl -s -X POST localhost:8080/v1/serials/MG00000000201/release
+
+# Loyalty: a buyer at the distributor claims points with the code under the seal
+curl -s localhost:8080/v1/points/claims -d '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
+curl -s localhost:8080/v1/points/members/7
+
+# Command center
+curl -s 'localhost:8080/v1/stock?sku=MGN-PROT-500'    # on hand, reserved, quarantine, ATP, inbound, days of inventory
+curl -s 'localhost:8080/v1/anomalies?type=OUT_OF_REGION'
+curl -s localhost:8080/v1/reports/leakage              # pallets leaking outside their distributor's region
+curl -s 'localhost:8080/v1/reports/sell-out-signal'    # per distributor per week: shipped vs scanned
+curl -s 'localhost:8080/v1/pos/gaps?store=STORE-BDG-01'
+```
+
 Every request and every SQL query is logged: `docker compose logs -f api`. Run `make seed` again to reset the data.
 
 Without Docker for the API itself: `cp config.example.yaml config.yaml`, start only the database with `docker compose up -d postgres`, then `make run`.
@@ -62,4 +92,4 @@ make lint
 
 ## Not built on purpose
 
-Authentication, rate limiting, payment gateway, POS app, frontend. See ARCHITECTURE.md §2.3 and §20.
+Authentication, rate limiting, payment gateway, POS app, frontend and dashboard, receipt (OCR) claims, dynamic vouchers and geofencing, automatic reallocation. See ARCHITECTURE.md §2.2, §2.3 and §20.

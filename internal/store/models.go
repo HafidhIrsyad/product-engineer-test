@@ -296,6 +296,18 @@ type Partner struct {
 	RegionRadiusKm float64
 }
 
+type PointClaim struct {
+	ID          int64
+	SerialID    int64
+	MemberID    int64
+	ProofType   string
+	Points      int32
+	ClaimedAt   time.Time
+	AvailableAt time.Time
+	ExpiresOn   time.Time
+	Status      string
+}
+
 type PosDevice struct {
 	ID              string
 	StoreID         int64
@@ -358,6 +370,7 @@ type Serial struct {
 	OrderID         *int64
 	FirstVerifiedAt *time.Time
 	UpdatedAt       time.Time
+	InnerCodeHash   []byte
 }
 
 type SerialEvent struct {

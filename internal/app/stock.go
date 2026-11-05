@@ -114,6 +114,19 @@ func receiveStock(ctx context.Context, q *store.Queries, container string, locat
 	return nil
 }
 
+// sellOutInferred counts a unit at a partner as sold: its owner proved the purchase with the inner code.
+func sellOutInferred(ctx context.Context, q *store.Queries, serialID, locationID, skuID int64) error {
+	n, err := q.DecreaseOnHand(ctx, store.DecreaseOnHandParams{Qty: 1, SkuID: skuID, LocationID: locationID})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: claim: no stock_balance row for sku %d at location %d", domain.ErrDataInconsistent, skuID, locationID)
+	}
+	m := movement{locationID: locationID, deltaOnHand: -1, reason: domain.MovementSellOutInferred, refType: "CLAIM", refID: strconv.FormatInt(serialID, 10)}
+	return ledger(ctx, q, stockLine{skuID: skuID, qty: 1}, m)
+}
+
 func ledger(ctx context.Context, q *store.Queries, l stockLine, m movement) error {
 	return q.InsertStockMovement(ctx, store.InsertStockMovementParams{
 		SkuID: l.skuID, LocationID: m.locationID, DeltaOnHand: m.deltaOnHand, DeltaReserved: m.deltaReserved, DeltaQuarantine: m.deltaQuarantine,

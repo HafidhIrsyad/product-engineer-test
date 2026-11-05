@@ -30,6 +30,10 @@ func classify(err error) (status int, code string) {
 		return http.StatusNotFound, "ORDER_NOT_FOUND"
 	case errors.Is(err, domain.ErrIdempotencyKeyReused):
 		return http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED"
+	case errors.Is(err, domain.ErrProofRejected):
+		return http.StatusUnprocessableEntity, "PROOF_REJECTED"
+	case errors.Is(err, domain.ErrAlreadyClaimed):
+		return http.StatusConflict, "ALREADY_CLAIMED"
 	case errors.Is(err, domain.ErrSerialNotFound):
 		return http.StatusNotFound, "SERIAL_NOT_FOUND"
 	case errors.Is(err, domain.ErrBatchExists):

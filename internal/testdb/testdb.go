@@ -61,7 +61,7 @@ func reset(t *testing.T, p *pgxpool.Pool) {
 	_, err := p.Exec(context.Background(), `
 		TRUNCATE sku, partner, location, pos_device, production_batch, orders, order_item,
 		         serial, serial_event, stock_balance, stock_movement,
-		         pos_transaction, pos_transaction_item, scan_event, anomaly
+		         pos_transaction, pos_transaction_item, scan_event, anomaly, point_claim
 		RESTART IDENTITY CASCADE`)
 	require.NoError(t, err, "reset database")
 }

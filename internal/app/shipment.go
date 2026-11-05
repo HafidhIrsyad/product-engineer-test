@@ -81,6 +81,13 @@ func (s *Service) Ship(ctx context.Context, in ShipInput) (ShipmentView, error) 
 		if err != nil {
 			return err
 		}
+		origin, err := q.GetLocationByID(ctx, c.locationID)
+		if err != nil {
+			return err
+		}
+		if origin.Type == domain.LocationPartner {
+			return fmt.Errorf("%w: stock at a partner is not shipped from here", domain.ErrInvalidInput)
+		}
 		if dest.Type == domain.LocationFactory || dest.ID == c.locationID {
 			return fmt.Errorf("%w: the destination must be a different location, and not a factory", domain.ErrInvalidInput)
 		}

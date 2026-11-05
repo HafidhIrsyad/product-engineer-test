@@ -160,6 +160,10 @@ func TestIntegration_Shipment_Refused(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.svc.Receive(ctx, app.ReceiveInput{ContainerCode: f.pallet, LocationCode: "HUB-BDG"})
 	assert.ErrorIs(t, err, domain.ErrWrongLocation)
+	_, err = f.svc.Receive(ctx, app.ReceiveInput{ContainerCode: f.pallet, LocationCode: "DIST-MDN"})
+	require.NoError(t, err)
+	_, err = f.svc.Ship(ctx, app.ShipInput{ContainerCode: f.pallet, ToLocationCode: "WH-JKT"})
+	assert.ErrorIs(t, err, domain.ErrInvalidInput, "stock at a partner is not ours to ship")
 
 	t.Run("a pallet with one unit set apart cannot travel as a whole", func(t *testing.T) {
 		g := newShipFixture(t)

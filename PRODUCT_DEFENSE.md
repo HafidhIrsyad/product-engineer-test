@@ -400,9 +400,9 @@ Urutannya mengikuti **ketergantungan data**: setiap fase menyiapkan data untuk f
 
 | Bagian | Dibangun di prototype | Hanya didesain |
 |---|---|---|
-| Kasus 1 | Agregasi serial, aturan `OUT_OF_REGION`, query cluster per pallet (dites). `partner_id` diisi lewat seed. | Endpoint ship/receive, sinyal volume order vs scan, test-buy, penegakan kontrak |
-| Kasus 2 | Verifikasi keaslian; scan QR luar tidak mengubah status di rak | Seluruh poin: pembuatan otomatis, klaim kode dalam/struk, siklus status, batas kecepatan |
-| Kasus 3 | `scan_event` dengan lokasi; penelusuran serial ke distributor | Voucher dinamis, geofence, eksperimen geo-holdout |
-| Kasus 4 | POS sync idempoten, heartbeat per perangkat, buffer, stok toko hanya D2C, penyelesaian `OVERSOLD` | Aplikasi POS, realokasi otomatis, notifikasi dan kompensasi |
+| Kasus 1 | Batch dan kode serial acak, agregasi pallet → karton → unit, ship/receive yang mengikat unit ke distributor, aturan `OUT_OF_REGION`, `GET /v1/reports/leakage` per pallet dan distributor, penelusuran `GET /v1/serials/{code}` (semua dites, ada di demo #5) | Sinyal volume order vs scan, test-buy, penegakan kontrak (proses dan hukum) |
+| Kasus 2 | Verifikasi keaslian; scan QR luar tidak mengubah status di rak dan tidak membuat poin. Klaim poin dengan **kode lapis dalam** (hanya hash disimpan), satu serial satu klaim, batas kecepatan `HELD`, masa tinjauan 72 jam, stok mitra dikurangi saat klaim (demo #6) | Klaim struk (OCR), tinjauan manual, pencabutan, penukaran poin, poin otomatis POS dan D2C (butuh identitas member di kasir) |
+| Kasus 3 | `scan_event` dengan lokasi; `GET /v1/reports/sell-out-signal`: per distributor per minggu, unit dikirim vs unit dipindai | Voucher dinamis, geofence, eksperimen geo-holdout itu sendiri (laporan hanya menyediakan datanya) |
+| Kasus 4 | POS sync idempoten, heartbeat per perangkat, buffer, stok toko hanya D2C, penyelesaian `OVERSOLD` (termasuk karantina dan sweeper), realokasi manual, satu transaksi rusak tidak memblokir batch, deteksi lompatan `local_seq` | Aplikasi POS, realokasi otomatis, notifikasi dan kompensasi |
 
-Pembagian ini disengaja. Bagian yang dibangun adalah bagian yang **bisa salah secara data**: konkurensi, idempotensi, dan aturan status. Bagian yang hanya didesain adalah kebijakan dan proses yang perlu keputusan bisnis.
+Pembagian ini disengaja. Bagian yang dibangun adalah bagian yang **bisa salah secara data**: konkurensi, idempotensi, dan aturan status, ditambah data yang dibutuhkan keputusan bisnis. Bagian yang hanya didesain adalah kebijakan dan proses yang perlu keputusan bisnis, atau layanan pihak ketiga.

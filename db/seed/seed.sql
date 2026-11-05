@@ -6,7 +6,7 @@ BEGIN;
 
 TRUNCATE sku, partner, location, pos_device, production_batch, orders, order_item,
          serial, serial_event, stock_balance, stock_movement,
-         pos_transaction, pos_transaction_item, scan_event, anomaly
+         pos_transaction, pos_transaction_item, scan_event, anomaly, point_claim
 RESTART IDENTITY CASCADE;
 
 INSERT INTO sku (code, name, units_per_carton, cartons_per_pallet) VALUES
@@ -33,11 +33,13 @@ INSERT INTO production_batch (code, sku_id, produced_at, expires_on) VALUES
 -- ---------------------------------------------------------------------------
 -- Units. Counters must match the serials (invariant I1, ARCHITECTURE.md §11.2).
 -- ---------------------------------------------------------------------------
-INSERT INTO serial (code, level, sku_id, batch_id, status, location_id, partner_id)
+INSERT INTO serial (code, level, sku_id, batch_id, status, location_id, partner_id, inner_code_hash)
 SELECT 'MG' || lpad(n::text, 11, '0'), 'UNIT',
        (SELECT id FROM sku WHERE code = v.sku), (SELECT id FROM production_batch WHERE sku_id = (SELECT id FROM sku WHERE code = v.sku)),
        v.status::serial_status, (SELECT id FROM location WHERE code = v.loc),
-       CASE WHEN v.loc = 'DIST-MDN' THEN 1 END
+       CASE WHEN v.loc = 'DIST-MDN' THEN 1 END,
+       -- Demo only: the inner code of the units at the distributor is DEMO + the last 4 digits (DEMO0402).
+       CASE WHEN v.loc = 'DIST-MDN' THEN sha256(convert_to('DEMO0' || n::text, 'UTF8')) END
 FROM (VALUES
     -- Demo 1, verify: three units already sold at the warehouse
     (1,   'MGN-PROT-500', 'SOLD',         'WH-JKT'),
@@ -61,7 +63,9 @@ FROM (VALUES
     -- Demo 4, split-brain: one last unit of another product at the same store
     (301, 'MGN-OMEGA-100','IN_STOCK',     'STORE-BDG-01'),
     -- Allocated to Distributor Medan, on the shelf of its warehouse (scan from Jakarta → out of region)
-    (401, 'MGN-PROT-500', 'IN_STOCK',     'DIST-MDN')
+    (401, 'MGN-PROT-500', 'IN_STOCK',     'DIST-MDN'),
+    -- Demo 6, points: a second unit there, whose inner code a buyer can claim
+    (402, 'MGN-PROT-500', 'IN_STOCK',     'DIST-MDN')
 ) AS v(n, sku, status, loc);
 
 INSERT INTO stock_balance (sku_id, location_id, on_hand)

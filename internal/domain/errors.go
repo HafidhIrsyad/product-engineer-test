@@ -25,6 +25,9 @@ var (
 	ErrIdempotencyKeyReused = errors.New("idempotency key already used for a different request")
 	ErrDataInconsistent     = errors.New("stored data is inconsistent")
 
+	ErrProofRejected  = errors.New("proof of purchase rejected")
+	ErrAlreadyClaimed = errors.New("unit already claimed")
+
 	ErrInvalidTransition = errors.New("invalid status transition")
 
 	ErrStaleStatus = errors.New("status changed by another process")

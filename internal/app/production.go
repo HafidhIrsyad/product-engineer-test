@@ -15,6 +15,7 @@ type CreateBatchInput struct {
 	LocationCode string `json:"location_code"`
 	ExpiresOn    string `json:"expires_on"`
 	Pallets      int    `json:"pallets"`
+	UnitLabels   bool   `json:"unit_labels"` // also return every unit's code and its secret inner code (for the printer)
 }
 
 type BatchView struct {
@@ -24,6 +25,12 @@ type BatchView struct {
 	Pallets   []PalletView `json:"pallets"`
 	Cartons   int          `json:"cartons"`
 	Units     int          `json:"units"`
+	Labels    []UnitLabel  `json:"unit_labels,omitempty"`
+}
+
+type UnitLabel struct {
+	SerialCode string `json:"serial_code"`
+	InnerCode  string `json:"inner_code"`
 }
 
 type PalletView struct {
@@ -81,11 +88,18 @@ func (s *Service) CreateBatch(ctx context.Context, in CreateBatchInput) (BatchVi
 		if err != nil {
 			return err
 		}
+		labels, err := setInnerCodes(ctx, q, units)
+		if err != nil {
+			return err
+		}
 		if err := q.InsertBatchSerialEvents(ctx, store.InsertBatchSerialEventsParams{RefID: in.BatchCode, BatchID: batchID}); err != nil {
 			return err
 		}
 
 		view = BatchView{Code: in.BatchCode, SKU: in.SKUCode, ExpiresOn: in.ExpiresOn, Cartons: len(cartons), Units: len(units)}
+		if in.UnitLabels {
+			view.Labels = labels
+		}
 		cartonsOf := map[int64][]string{}
 		for _, c := range cartons {
 			cartonsOf[*c.ParentID] = append(cartonsOf[*c.ParentID], c.Code)
@@ -96,6 +110,18 @@ func (s *Service) CreateBatch(ctx context.Context, in CreateBatchInput) (BatchVi
 		return nil
 	})
 	return view, err
+}
+
+// setInnerCodes gives every unit a secret code under its seal. Only the hash is stored.
+func setInnerCodes(ctx context.Context, q *store.Queries, units []store.InsertSerialsRow) ([]UnitLabel, error) {
+	labels := make([]UnitLabel, len(units))
+	hashes := make([][]byte, len(units))
+	for i, u := range units {
+		inner := domain.NewInnerCode()
+		labels[i] = UnitLabel{SerialCode: u.Code, InnerCode: inner}
+		hashes[i] = domain.HashInnerCode(inner)
+	}
+	return labels, q.SetInnerCodeHashes(ctx, store.SetInnerCodeHashesParams{Ids: idsOf(units), Hashes: hashes})
 }
 
 type serialIDs struct{ sku, batch, location int64 }

@@ -76,39 +76,50 @@
 | 4. Automated Test Suite: validasi siklus status hologram | §18, test T3–T4 |
 | 4. Automated Test Suite: idempotensi sync offline | §18, test T5–T7 |
 | Tambahan: pemisahan unit vs integration test, migrasi | §18.1, §18.5–18.6, test T20 |
+| Pilar A–D lengkap: produksi, logistik, karantina, fulfill, realokasi, command center | §8, §11.4, §12.6, §12.8, §14 |
+| Kasus 2 dan 3, bagian yang bisa dikode (klaim poin kode dalam, laporan sinyal sell-out) | §21 |
 
 ### 2.2 Prioritas fitur
 
-Prioritas agar mudah dipangkas bila waktu habis. **Status: semua P0 sudah dibangun, termasuk expiry dan `make demo` (P1). Fulfill order (P1) belum dibangun; ship/receive dan `GET /v1/stock` (P2) hanya didesain, seperti `ListUnitsUnderContainer` di §8.3.**
+Prioritas agar mudah dipangkas bila waktu habis.
 
 - **P0** = wajib (langsung diminta assignment)
-- **P1** = dibangun setelah semua P0 selesai; membantu demo dan cerita bisnis
+- **P1** = dibangun setelah semua P0 selesai; melengkapi empat pilar dan membantu demo dan cerita bisnis
 - **P2** = hanya didokumentasikan, tidak dikode
 
-| Fitur | Prioritas | Catatan |
+**Status: semua P0 dan P1 sudah dibangun. Yang belum dibangun hanya baris P2 di bawah dan yang tercatat di §2.3.**
+
+| Fitur | Prioritas | Status |
 |---|---|---|
-| Migrasi skema (goose) + seed data demo | P0 | |
-| Verifikasi serial + aturan anomali R0–R3 | P0 | |
-| Buat order (reservasi atomik, multi-item, lokasi dari klien) | P0 | |
-| Cancel order (lepas reservasi, idempoten) | P0 | |
-| Pay order (mock) | P0 | Hanya ubah status. Tidak ada payment gateway. Menolak order yang sudah kedaluwarsa. |
-| POS sync idempoten + deteksi oversell | P0 | |
-| POS heartbeat (ATP online toko = 0 saat offline) | P0 | Lapis pencegahan Kasus 4. P0 karena `ReserveStock` (P0) bergantung padanya: tanpa heartbeat, toko selalu dianggap offline. |
-| Expiry reservasi (TTL + sweeper) | P1 | Naik dari P2: Pilar B meminta pelepasan stok kembali |
-| `make demo` (skrip curl skenario presentasi) | P1 | Assignment wajib dipresentasikan |
-| Fulfill order (scan serial → `SOLD`) | P1 | Melengkapi siklus order dan siklus serial |
-| Ship/receive container (pallet/karton) | P2 | Di prototype, lokasi serial dan `partner_id` (Kasus 1) diisi lewat seed |
-| `GET /v1/stock` (lihat ATP) | P2 | |
-| Quarantine/QC endpoint | P2 | Transisi tetap ada di state machine dan dites |
-| Realokasi otomatis order yang kalah | P2 | P0 hanya menandai `NEEDS_REALLOCATION` + melepas reservasi |
-| Dashboard stok, Days of Inventory | P2 | Query/view ditulis di dokumen |
-| Halaman HTML `/v/{code}` untuk demo scan QR | P2 | Statis, memanggil `POST /v1/verify` |
-| Klaim poin loyalti (Kasus 2) | P2 | Desain tabel di §21 |
-| Atribusi marketing (Kasus 3) | P2 | Hanya di `PRODUCT_DEFENSE.md` |
+| Migrasi skema (goose) + seed data demo | P0 | ✅ |
+| Verifikasi serial + aturan anomali R0–R3 | P0 | ✅ |
+| Buat order (reservasi atomik, multi-item, lokasi dari klien) | P0 | ✅ |
+| Cancel order (lepas reservasi, idempoten) | P0 | ✅ |
+| Pay order (mock) | P0 | ✅ Hanya ubah status. Menolak order yang sudah kedaluwarsa. |
+| POS sync idempoten + deteksi oversell | P0 | ✅ |
+| POS heartbeat (ATP online toko = 0 saat offline) | P0 | ✅ Lapis pencegahan Kasus 4. P0 karena `ReserveStock` bergantung padanya. |
+| Expiry reservasi (TTL + sweeper) | P1 | ✅ Pilar B meminta pelepasan stok kembali |
+| `make demo` (skrip curl skenario presentasi) | P1 | ✅ Enam skenario |
+| Produksi: batch, kode serial acak, agregasi unit → karton → pallet | P1 | ✅ `POST /v1/production/batches` (§8) |
+| Penelusuran serial | P1 | ✅ `GET /v1/serials/{code}` |
+| Ship / receive container (pallet, karton, unit) | P1 | ✅ (§8.3) |
+| Karantina dan lepas karantina | P1 | ✅ (§11.4) |
+| Fulfill order (scan serial → `SOLD`) | P1 | ✅ (§12.6) |
+| Realokasi order yang kalah, manual oleh ops | P1 | ✅ (§12.8) |
+| Command center: stok terpadu, Days of Inventory, anomali, laporan kebocoran | P1 | ✅ (§14) |
+| POS: satu transaksi rusak tidak memblokir batch; deteksi lompatan `local_seq` | P1 | ✅ (§13.7) |
+| `Idempotency-Key` order yang dipakai ulang dengan isi berbeda → 422 | P1 | ✅ (§12.2) |
+| Klaim poin dengan kode lapis dalam (Kasus 2) | P1 | ✅ Versi minimal (§21) |
+| Laporan sinyal sell-out per rayon (Kasus 3) | P1 | ✅ Data masukan untuk eksperimen (§21) |
+| Realokasi otomatis order yang kalah | P2 | ❌ Memilih lokasi pengganti adalah kebijakan bisnis |
+| Klaim poin dengan struk, tinjauan manual `HELD`, penukaran poin | P2 | ❌ |
+| Voucher dinamis, geofence, eksperimen geo-holdout (Kasus 3) | P2 | ❌ Hanya di `PRODUCT_DEFENSE.md` |
+| Halaman HTML `/v/{code}` untuk demo scan QR | P2 | ❌ |
+| Dashboard visual | P2 | ❌ Data tersedia lewat endpoint (§14) |
 
 ### 2.3 Sengaja tidak dibangun (tulis di README)
 
-Frontend / aplikasi POS, CouchDB/RxDB, Redis, message queue, microservices, autentikasi & otorisasi, rate limiting, payment gateway, integrasi lini produksi, reverse geocoding, observability stack.
+Frontend / aplikasi POS, dashboard visual, CouchDB/RxDB, Redis, message queue, microservices, autentikasi & otorisasi, rate limiting, payment gateway, integrasi lini produksi, reverse geocoding, observability stack.
 
 Alasan: tidak diminta assignment. Setiap komponen tambahan menambah risiko waktu tanpa menambah nilai pada rubrik. Batasan ini ditulis eksplisit sebagai bagian dari *product thinking*.
 
@@ -311,17 +322,24 @@ product-engineer-test/            # github.com/HafidhIrsyad/product-engineer-tes
 │   │   ├── serial.go             #   SerialStatus, CanTransition, format kode serial
 │   │   ├── verify.go             #   aturan R1–R3, verdict, haversine
 │   │   ├── order.go              #   OrderStatus, Channel
-│   │   ├── stock.go              #   MovementReason, LocationType
+│   │   ├── stock.go              #   MovementReason, LocationType, DaysOfInventory, RunoutWarning
+│   │   ├── points.go             #   kode lapis dalam (acak + hash), aturan poin
 │   │   ├── pos.go                #   PosTxn, PayloadHash, Validate, ClassifyPosItem, status hasil POS
 │   │   └── errors.go             #   semua sentinel error
 │   ├── app/                      # use case = graf §16
 │   │   ├── service.go            #   Service (satu struct), Health
 │   │   ├── verify.go             #   Verify
-│   │   ├── order.go              #   CreateOrder, GetOrder, PayOrder, CancelOrder
+│   │   ├── order.go              #   CreateOrder, GetOrder, PayOrder, CancelOrder, ReallocateOrder
+│   │   ├── fulfill.go            #   FulfillOrder
+│   │   ├── production.go         #   CreateBatch, TraceSerial
+│   │   ├── shipment.go           #   Ship, Receive (container)
+│   │   ├── quarantine.go         #   Quarantine, ReleaseQuarantine
+│   │   ├── points.go             #   ClaimPoints, Points
+│   │   ├── command.go            #   StockOverview, Anomalies, Leakage, SellOutSignal
 │   │   ├── serial.go             #   transitionSerial: CanTransition + UPDATE ... WHERE status = from + serial_event
 │   │   ├── expiry.go             #   ExpireDue, RunExpirySweeper
 │   │   ├── pos.go                #   SyncPOS (Tx1 + Tx2), Heartbeat
-│   │   └── stock.go              #   reserve, release, sellPOS: satu-satunya penulis stok
+│   │   └── stock.go              #   reserve, release, sellPOS, shipOut, receiveStock, fulfillStock, ...: satu-satunya penulis stok
 │   ├── store/                    # PostgreSQL
 │   │   ├── migrations/           #   goose *.sql (dibaca sqlc DAN di-embed ke binary)
 │   │   ├── queries/              #   *.sql sumber sqlc
@@ -330,7 +348,7 @@ product-engineer-test/            # github.com/HafidhIrsyad/product-engineer-tes
 │   │   └── db.go, models.go, *.sql.go   # HASIL SQLC: di-commit, tidak diedit manual
 │   ├── api/                      # HTTP
 │   │   ├── router.go             #   NewRouter: chi + middleware + semua route
-│   │   ├── health.go, verify.go, order.go, pos.go   # handler + decode (boundary)
+│   │   ├── health.go, verify.go, order.go, pos.go, production.go, shipment.go, points.go, command.go   # handler + decode (boundary)
 │   │   ├── respond.go            #   writeJSON
 │   │   └── errors.go             #   satu-satunya mapping error → HTTP
 │   ├── config/config.go          # viper (§5.3)
@@ -423,6 +441,9 @@ erDiagram
 | `pos_device` | Perangkat POS per toko + heartbeat | Apakah semua kasir toko ini sedang online? |
 | `scan_event` | Semua scan konsumen | Siapa, di mana, kapan memindai? |
 | `anomaly` | Temuan yang perlu ditinjau manusia | Apa yang mencurigakan? |
+| `point_claim` | Klaim poin: satu serial satu klaim (`UNIQUE`) | Siapa sudah mengklaim unit ini, kapan poinnya bisa ditukar? |
+
+Skema dibangun oleh tiga migrasi goose: `00001_init` (semua tabel di atas), `00002` (`orders.paid_at` agar order yang kalah kembali ke status bayarnya, `orders.request_hash` untuk `Idempotency-Key`), dan `00003` (`serial.inner_code_hash`, tabel `point_claim`).
 
 ### 7.3 Potongan DDL penting
 
@@ -493,7 +514,8 @@ CREATE TABLE pos_transaction (
 
 - Isi QR: URL verifikasi, contoh `https://verify.<domain>/v/MG7K2Q9XHD4PZ`.
   Konsumen cukup memindai dengan kamera HP, tanpa aplikasi.
-- Kode: prefix `MG` + 11 karakter acak base32 (≈ 55 bit acak).
+- Kode: prefix `MG` + 11 karakter acak base32 (≈ 55 bit acak), dibuat oleh `domain.NewSerialCode` dari `crypto/rand`. Tabrakan kode ditolak constraint `UNIQUE` dan membuat request gagal (500, peluang sekitar 1 : 3,6 × 10¹⁶); tidak ada retry.
+- **Kode lapis dalam:** setiap unit juga mendapat kode rahasia 8 karakter di balik segel (bukan di QR luar). Hanya hash SHA-256 yang disimpan (`serial.inner_code_hash`). Kode itu dikembalikan **sekali**, saat batch dibuat dengan `unit_labels: true`, untuk dicetak. Ini bukti kepemilikan untuk klaim poin (§21).
 - **Kenapa acak, bukan berurutan:** kode berurutan (`...0001`, `...0002`) mudah ditebak. Pemalsu bisa mencetak kode "sah" yang belum dipakai.
   Dengan 55 bit acak dan target jutaan unit, peluang menebak kode valid sangat kecil.
 - **Kenapa tidak memakai tanda tangan kriptografis (HMAC) di QR:** verifikasi selalu online ke DB, jadi keberadaan kode di DB sudah cukup sebagai bukti.
@@ -543,19 +565,24 @@ ORDER BY s.id
 FOR UPDATE OF s;   -- kunci semua unit agar tidak berubah saat diproses
 ```
 
-**Ship (P2):** `POST /v1/shipments/ship { container_code, to_location_code }`
+**Satu pola untuk semua operasi container** (`app/shipment.go`): `ListContainerTree` mengunci container dan semua isinya (`FOR UPDATE`, urut `id`). Semua baris harus berstatus dan berlokasi sama; jika tidak → 409 `MIXED_CONTAINER` (pallet yang sebagian unitnya sudah dikarantina atau dijual tidak bisa berjalan utuh). Container bisa pallet, karton, atau satu unit. Perubahan status dilakukan satu `UPDATE ... WHERE id = ANY($ids) AND status = $from` (`moveSerials`, di `app/serial.go`, juga memeriksa `CanTransition`), ditambah satu `INSERT ... SELECT` ke `serial_event`. Jumlah baris yang berubah harus sama dengan jumlah baris yang dikunci, jika tidak → `ErrStaleStatus`.
 
-1. Ambil container dan semua unit di bawahnya (`FOR UPDATE`).
-2. Validasi: semua unit berstatus `IN_WAREHOUSE` atau `IN_STOCK`, dan berada di lokasi asal yang sama.
-3. Ubah semua serial (container + unit) menjadi `IN_TRANSIT`, `location_id = tujuan`.
-   Jika tujuan adalah lokasi `PARTNER`, isi `partner_id` ← **di sinilah unit "diikat" ke distributor**.
-4. `stock_balance` lokasi asal: `on_hand -= n` (alasan `SHIP_OUT`).
-5. Tulis `serial_event` per unit (bulk `INSERT ... SELECT`) dan `stock_movement`.
+**Ship:** `POST /v1/shipments/ship { container_code, to_location_code }`
 
-**Receive (P2):** `POST /v1/shipments/receive { container_code, location_code }`
+1. Kunci container dan isinya. Status harus `IN_WAREHOUSE` atau `IN_STOCK` (`CanTransition` ke `IN_TRANSIT`).
+2. Tujuan harus lokasi lain dan bukan pabrik.
+3. Semua baris menjadi `IN_TRANSIT`, `location_id` = tujuan. Jika tujuan bertipe `PARTNER`, `partner_id` diisi ← **di sinilah unit "diikat" ke distributor**.
+4. Lokasi asal: `on_hand -= n` (`SHIP_OUT`) lewat `UPDATE ... WHERE on_hand - reserved - quarantine >= n`. **Stok yang sudah dijanjikan ke order online tidak boleh ikut dikirim** → 409 `INSUFFICIENT_STOCK`, seluruh transaksi dibatalkan.
 
-1. Ambil unit di bawah container dengan status `IN_TRANSIT` dan `location_id = lokasi ini`.
-2. Ubah menjadi `IN_STOCK`. `stock_balance` lokasi tujuan: `on_hand += n` (alasan `RECEIVE`).
+**Receive:** `POST /v1/shipments/receive { container_code, location_code }` memakai satu endpoint untuk dua keadaan:
+
+- Container `PRODUCED` (baru dari pabrik) diterima di lokasi `CENTRAL_WAREHOUSE` → `IN_WAREHOUSE`.
+- Container `IN_TRANSIT` diterima di lokasi tujuannya → `IN_STOCK`. Lokasi lain → 409 `WRONG_LOCATION`.
+- Status lain → 409 `INVALID_SERIAL_STATUS`.
+
+Efek: `on_hand += n` di lokasi penerima (`RECEIVE`; baris `stock_balance` dibuat jika belum ada).
+
+**Urutan kunci:** serial (container dan isinya, urut `id`) → `stock_balance`. Sesuai urutan global §12.4. Satu container hanya berisi satu SKU, jadi hanya satu baris stok yang disentuh.
 
 **Membuka karton di toko:** `parent_id` **tidak dihapus** saat unit dijual satuan. `parent_id` berarti "pernah dikemas dalam", dan itu adalah bukti untuk Kasus 1.
 Jika ada pengemasan ulang (repack), `parent_id` diubah dan dicatat di `serial_event` dengan `ref_type = 'PACKING'`.
@@ -634,7 +661,7 @@ stateDiagram-v2
     IN_WAREHOUSE --> SOLD : fulfill order D2C dari gudang
     IN_STOCK --> SOLD : POS sync / fulfill dari toko
     SOLD --> VERIFIED : scan konsumen pertama
-    IN_STOCK --> VERIFIED : klaim kode dalam / struk\n(HANYA di lokasi PARTNER, P2)
+    IN_STOCK --> VERIFIED : klaim kode lapis dalam\n(HANYA di lokasi PARTNER)
     IN_WAREHOUSE --> QUARANTINE : QC gagal / dicurigai
     IN_STOCK --> QUARANTINE : rusak / dicurigai
     QUARANTINE --> IN_WAREHOUSE : lolos QC ulang
@@ -653,9 +680,9 @@ stateDiagram-v2
 | `IN_WAREHOUSE` | `SOLD` | Fulfill order | Serial sesuai SKU order, di lokasi order |
 | `IN_STOCK` | `SOLD` | POS sync / fulfill | Lokasi bertipe `OWN_STORE` atau `HUB` |
 | `SOLD` | `VERIFIED` | Scan konsumen pertama setelah terjual | — |
-| `IN_STOCK` | `VERIFIED` | Klaim poin dengan kode dalam / struk (P2) | **Hanya** di lokasi `PARTNER`. Scan QR luar **tidak** mengubah status. |
-| `IN_WAREHOUSE`, `IN_STOCK` | `QUARANTINE` | QC (P2) | — |
-| `QUARANTINE` | `IN_WAREHOUSE`, `IN_STOCK` | QC ulang (P2) | Kembali ke tipe lokasi semula |
+| `IN_STOCK` | `VERIFIED` | Klaim poin dengan kode lapis dalam (struk: P2) | **Hanya** di lokasi `PARTNER`. Scan QR luar **tidak** mengubah status. |
+| `IN_WAREHOUSE`, `IN_STOCK` | `QUARANTINE` | QC (`POST /v1/serials/{code}/quarantine`) | Hanya satu unit |
+| `QUARANTINE` | `IN_WAREHOUSE`, `IN_STOCK` | QC ulang (`release`) | `IN_WAREHOUSE` di gudang pusat, `IN_STOCK` di lokasi lain |
 
 **Bukti terjual di lokasi mitra:**
 POS Indomaret dan distributor tidak memberi tahu kita kapan unit terjual. Scan QR **luar** bukan bukti terjual, karena siapa saja bisa memindainya di rak: calon pembeli yang mengecek keaslian, atau kasir. Bukti terjual di mitra adalah **kode lapis dalam** (hanya terlihat setelah segel dibuka) atau struk, yang dipakai saat klaim poin (§21). Saat itulah status menjadi `VERIFIED` dan stok mitra dicatat terjual (`SELL_OUT_INFERRED`). Scan luar hanya dicatat di `scan_event`.
@@ -837,9 +864,10 @@ Untuk setiap (SKU, lokasi):
 ```
 I1:  on_hand  = COUNT(serial UNIT di lokasi itu, status ∈ {IN_WAREHOUSE, IN_STOCK, QUARANTINE})
 I2:  reserved = SUM(order_item.qty) untuk order di lokasi itu dengan status ∈ {PENDING_PAYMENT, PAID}
+I3:  quarantine = COUNT(serial UNIT di lokasi itu, status = QUARANTINE)
 ```
 
-Hanya dua invariant ini yang dites. Ledger (`stock_movement`) ditulis oleh fungsi yang sama dengan counter (§11.3), jadi kecocokan counter dan ledger tidak perlu dites terpisah. Kolom `quarantine` belum berubah di prototype karena endpoint QC masih P2.
+Hanya tiga invariant ini yang dites. Ledger (`stock_movement`) ditulis oleh fungsi yang sama dengan counter (§11.3), jadi kecocokan counter dan ledger tidak perlu dites terpisah. Kolom `quarantine` belum berubah di prototype karena endpoint QC masih P2.
 
 ```sql
 -- name: CheckOnHandInvariant :many
@@ -855,16 +883,24 @@ LEFT JOIN (
 WHERE sb.on_hand <> COALESCE(s.cnt, 0);
 ```
 
-Pengecekan ini diimplementasikan sebagai `testdb.AssertInvariants` (I1 dan I2) dan dipanggil di akhir test integrasi yang mengubah stok. Di produksi bisa dijadikan job rekonsiliasi berkala.
+Pengecekan ini diimplementasikan sebagai `testdb.AssertInvariants` (I1, I2, I3) dan dipanggil di akhir test integrasi yang mengubah stok. Di produksi bisa dijadikan job rekonsiliasi berkala.
 
 ### 11.3 Aturan menulis stok
 
-Semua perubahan `stock_balance` lewat fungsi di **`app/stock.go`** (`reserve`, `release`, `sellPOS`, ...). Setiap fungsi itu selalu:
+Semua perubahan `stock_balance` lewat fungsi di **`app/stock.go`** (`reserve`, `release`, `sellPOS`, `shipOut`, `receiveStock`, `fulfillStock`, `sellOutInferred`, ...). Setiap fungsi itu selalu:
 1. Meng-`UPDATE` `stock_balance`.
 2. Meng-`INSERT` `stock_movement` dengan delta yang sama.
 3. Di dalam transaksi yang sama dengan pemanggil.
 
 Tidak ada kode lain yang boleh menulis `stock_balance` langsung.
+
+### 11.4 Karantina / QC
+
+`POST /v1/serials/{code}/quarantine { reason }` dan `POST /v1/serials/{code}/release` (hanya satu unit):
+
+- Karantina: unit `IN_WAREHOUSE`/`IN_STOCK` → `QUARANTINE`, `quarantine += 1` (`on_hand` tetap: unit rusak masih ada secara fisik). ATP turun karena rumus mengurangi `quarantine`. Alasan wajib (maksimal 200 karakter), dicatat di `serial_event`.
+- Lepas: `QUARANTINE` → `IN_WAREHOUSE` di gudang pusat, `IN_STOCK` di lokasi lain; `quarantine -= 1`.
+- **Unit rusak yang sedang dijanjikan ke order:** karantina selalu diizinkan (fakta fisik menang, seperti Kasus 4). Setelah transaksi karantina commit, `resolveOversell` dijalankan untuk (lokasi, SKU) itu: jika `reserved` melebihi stok baik, order yang kalah (belum dibayar dulu, lalu terbaru) melepas stoknya → `NEEDS_REALLOCATION`.
 
 ---
 
@@ -893,7 +929,7 @@ Konsekuensinya: reservasi yang tidak dibayar harus kedaluwarsa. `expires_at = cr
 
 ### 12.2 Membuat order
 
-`POST /v1/orders` dengan header `Idempotency-Key: <uuid>`
+`POST /v1/orders` dengan header `Idempotency-Key: <uuid>`. Key yang sama dengan **isi yang sama** (channel, lokasi, item; urutan item tidak berpengaruh) mengembalikan order yang sudah ada (200). Key yang sama dengan isi **berbeda** → 422 `IDEMPOTENCY_KEY_REUSED`, seperti `ID_REUSED_WITH_DIFFERENT_PAYLOAD` di POS. Isi dibandingkan lewat `orders.request_hash` (SHA-256 dari bentuk kanonik).
 
 ```json
 {
@@ -1023,7 +1059,7 @@ Alur (satu transaksi): jalankan `LockOrder`, lalu putuskan berdasarkan status di
 
 Satu mekanisme saja: **row lock**. Cancel ganda bersamaan: yang kedua menunggu kunci, lalu membaca status `CANCELLED` dan tidak melepas stok. Cancel vs fulfill sama: siapa yang mendapat kunci lebih dulu menang, yang lain melihat status baru.
 
-### 12.6 Fulfill (P1)
+### 12.6 Fulfill
 
 `POST /v1/orders/{id}/fulfill` dengan daftar kode serial yang di-scan picker:
 
@@ -1032,17 +1068,19 @@ Satu mekanisme saja: **row lock**. Cancel ganda bersamaan: yang kedua menunggu k
 ```
 
 Validasi (urutan kunci sesuai §12.4: order → serial → stok):
-- Order berstatus `PAID` (dikunci `FOR UPDATE`).
-- Semua serial dikunci sekaligus, urut `id`.
-- Jumlah serial per SKU **sama persis** dengan `order_item.qty`.
-- Setiap serial: level `UNIT`, SKU cocok, di lokasi order, status `IN_WAREHOUSE`/`IN_STOCK`, tidak duplikat di request.
+- Order berstatus `PAID` (dikunci `FOR UPDATE`), jika tidak → 409 `INVALID_ORDER_STATUS`.
+- Semua serial dikunci sekaligus, urut `id` (`LockSerialsByCodes`). Kode tidak dikenal → 404.
+- Setiap serial: level `UNIT`, di lokasi order, tidak duplikat di request, jumlah per SKU **sama persis** dengan `order_item.qty` (kurang, lebih, atau SKU di luar order → 422).
+- Status `IN_WAREHOUSE`/`IN_STOCK`: `transitionSerial` menolak yang lain (409 `INVALID_SERIAL_STATUS`).
 
 Efek (satu transaksi):
 - Serial → `SOLD`, `order_id` diisi, `serial_event`.
-- `stock_balance`: `on_hand -= n`, `reserved -= n` (alasan `SALE_ONLINE`).
+- `stock_balance`: `on_hand -= n`, `reserved -= n` (alasan `SALE_ONLINE`) lewat `UPDATE ... WHERE reserved >= n`.
 - Order → `FULFILLED`.
 
-Ini adalah titik di mana **janji berbasis jumlah** (reservasi) berubah menjadi **unit fisik spesifik** (serial).
+**Idempoten:** order yang sudah `FULFILLED` dengan **himpunan serial yang sama** → 200 tanpa perubahan. Serial lain → 409 `INVALID_ORDER_STATUS`.
+
+Ini adalah titik di mana **janji berbasis jumlah** (reservasi) berubah menjadi **unit fisik spesifik** (serial). Fulfill vs cancel pada order yang sama: keduanya mengunci `orders` lebih dulu, jadi tepat satu menang (T35). Fulfill vs penjualan POS untuk unit yang sama: `FOR UPDATE` pada serial; yang kedua melihat `SOLD` (T36).
 
 ### 12.7 Expiry reservasi (P1)
 
@@ -1083,6 +1121,16 @@ WHERE id = sqlc.arg(id)
 ```
 
 Order yang lewat `expires_at` tetapi belum disapu sweeper tetap tidak bisa dibayar. Kebenaran tidak bergantung pada seberapa cepat sweeper berjalan.
+
+### 12.8 Realokasi order yang kalah
+
+`POST /v1/orders/{id}/reallocate { location_code }`, oleh ops, untuk order `NEEDS_REALLOCATION` (kalah dari penjualan POS atau dari karantina):
+
+1. Kunci order; statusnya harus `NEEDS_REALLOCATION`, jika tidak → 409 `INVALID_ORDER_STATUS`.
+2. `ReserveStock` di lokasi baru untuk semua item (urut `sku_id`), memakai channel order. Stok tidak cukup → 409 `INSUFFICIENT_STOCK` dan seluruh transaksi dibatalkan: order tetap `NEEDS_REALLOCATION`.
+3. Lokasi order diganti. Status kembali seperti sebelum kalah: `PAID` jika `orders.paid_at` terisi, jika tidak `PENDING_PAYMENT` dengan `expires_at` baru (+15 menit).
+
+Memilih lokasi pengganti otomatis adalah kebijakan bisnis (jarak, ongkos kirim, janji ke pelanggan), jadi tidak dibangun.
 
 ---
 
@@ -1147,7 +1195,7 @@ Response (HTTP 200, hasil **per transaksi**):
 | `ACCEPTED` | Diproses pertama kali, semua valid | Hapus dari outbox |
 | `DUPLICATE` | Sudah pernah diproses (retry) | Hapus dari outbox |
 | `ACCEPTED_WITH_ISSUES` | Penjualan dicatat, ada serial bermasalah → masuk `anomaly` untuk ditinjau | Hapus dari outbox |
-| `REJECTED` | Payload rusak atau UUID dipakai ulang | **Jangan retry.** Tandai untuk dicek (bug perangkat) |
+| `REJECTED` | Payload rusak, UUID dipakai ulang, atau data stok toko tidak konsisten (`DATA_INCONSISTENT`) | **Jangan retry.** Tandai untuk dicek (bug perangkat atau data) |
 
 **Prinsip: penjualan yang sudah terjadi tidak pernah ditolak** karena masalah data serial. Uang sudah diterima dan barang sudah keluar. Masalahnya dicatat untuk ditinjau. `REJECTED` hanya untuk payload yang secara teknis tidak valid.
 
@@ -1248,7 +1296,7 @@ Pada saat yang sama, server masih melihat ATP = 1 dan menerima order online yang
    3. Kunci order itu dengan `LockOrder` dan **cek ulang statusnya**. Jika sudah bukan `PENDING_PAYMENT`/`PAID` (dibatalkan saat menunggu kunci) → pilih lagi. Jika tidak ada kandidat → selesai.
    4. Baru sekarang, dengan order terkunci, baca `shortfall = reserved − (on_hand − quarantine)` dengan mengunci baris `stock_balance` (`FOR UPDATE`). Jika ≤ 0 → selesai: cancel atau expiry yang commit sebelum titik ini terlihat, sehingga **tidak ada order yang dikorbankan tanpa kekurangan nyata**. Urutan kunci tetap advisory lock → `orders` → `stock_balance`.
    5. Lepas **seluruh** reservasinya (semua item, urut `sku_id`, alasan `RELEASE`), ubah status → `NEEDS_REALLOCATION`, catat `anomaly` `OVERSOLD`.
-3. P2 / produksi: worker mencoba mereservasi ulang order itu di lokasi lain dengan `ReserveStock`. Jika gagal → tawarkan ke pelanggan: backorder, atau batal + refund otomatis + voucher.
+3. Realokasi: manual oleh ops lewat `POST /v1/orders/{id}/reallocate` (§12.8). Otomatis (P2 / produksi): worker mencoba mereservasi ulang order itu di lokasi lain dengan `ReserveStock`. Jika gagal → tawarkan ke pelanggan: backorder, atau batal + refund otomatis + voucher.
 
 Urutan kunci Tx2: advisory lock → `orders` → `stock_balance`. Sesuai urutan global §12.4. Advisory lock hanya dipakai Tx2, jadi tidak membentuk siklus dengan operasi lain.
 
@@ -1308,42 +1356,36 @@ WHERE pos_device.store_id = EXCLUDED.store_id;
 
 Tidak perlu job terpisah. Kondisi "offline" dihitung saat reservasi.
 
+### 13.7 Ketahanan batch dan deteksi data hilang
+
+- **Satu transaksi rusak tidak memblokir batch.** Jika Tx1 satu transaksi gagal karena data tidak konsisten (misalnya baris `stock_balance` tidak ada untuk unit yang `IN_STOCK`; `ErrDataInconsistent`), transaksi itu di-rollback sendiri, dicatat di log sebagai error, dan hasilnya `REJECTED` (`DATA_INCONSISTENT`); transaksi lain dalam batch tetap diproses. Hanya galat infrastruktur (DB mati, context habis) yang menghasilkan 500 untuk seluruh batch.
+- **Data hilang di perangkat.** Idempotensi mencegah data ganda, bukan data hilang. `GET /v1/pos/gaps?store=` mendaftar nomor `local_seq` yang dilompati per perangkat (`LAG` per `device_id`), yaitu penjualan yang belum diterima atau hilang. Ini tempat mencocokkan dengan kas toko. Lompatan sebelum nomor pertama yang diterima tidak terlihat (perangkat bisa mulai dari 0 atau 1).
+
 ---
 
 ## 14. Supply Chain Command Center (Pilar D)
 
-Pilar ini **tidak dikode** (P2) selain anomali R3 `OUT_OF_REGION` (sudah P0). Bagian ini menunjukkan bahwa data dari Pilar A–C sudah cukup untuk membangunnya.
+Dibangun sebagai endpoint baca (tanpa dashboard visual; JSON-nya siap dipakai dashboard).
 
-### 14.1 Visibilitas sentral
+### 14.1 Visibilitas sentral: `GET /v1/stock?sku=&location=`
 
-```sql
--- Stok per lokasi, termasuk yang sedang dalam perjalanan menuju lokasi itu.
-CREATE VIEW v_stock_overview AS
-SELECT l.code AS location, l.type, s.code AS sku,
-       sb.on_hand, sb.reserved, sb.quarantine,
-       sb.on_hand - sb.reserved - sb.quarantine AS atp,
-       (SELECT COUNT(*) FROM serial x
-         WHERE x.level = 'UNIT' AND x.status = 'IN_TRANSIT'
-           AND x.location_id = l.id AND x.sku_id = s.id) AS inbound
-FROM stock_balance sb
-JOIN location l ON l.id = sb.location_id
-JOIN sku s      ON s.id = sb.sku_id;
-```
+Satu baris per (SKU, lokasi): `on_hand`, `reserved`, `quarantine`, `atp` (= `on_hand − reserved − quarantine`), `inbound`, `sold_14d`, `days_of_inventory`, `runout_warning`. Lokasi yang sedang dituju shipment tetap muncul walau belum punya stok (`inbound` > 0, `on_hand` 0), supaya "barang dalam perjalanan" terlihat. `inbound` = jumlah unit `IN_TRANSIT` menuju lokasi itu. Filter `sku`/`location` kosong = semua; kode tidak dikenal = daftar kosong.
 
 ### 14.2 Telemetri runout stok (Days of Inventory)
 
 ```
 avg_daily_sales = total penjualan 14 hari terakhir / 14
                   (dari stock_movement: SALE_POS + SALE_ONLINE + SELL_OUT_INFERRED)
-DOI             = (on_hand − quarantine) / avg_daily_sales
-Peringatan      = DOI < lead_time_hari + safety_hari  (contoh: 7 + 3 = 10 hari)
+DOI             = (on_hand − quarantine) / avg_daily_sales      (null jika tidak ada penjualan)
+runout_warning  = DOI < 10 hari                                   (lead time 7 + safety 3)
 ```
 
-Untuk lokasi mitra, penjualan berasal dari `SELL_OUT_INFERRED` (klaim kode dalam / struk, P2). Angkanya adalah **batas bawah**, karena tidak semua konsumen mengklaim. Rasio scan terhadap penjualan bisa dikalibrasi dari data toko sendiri, di mana penjualan nyata diketahui.
+Fungsinya `domain.DaysOfInventory` dan `domain.RunoutWarning` (murni, dites di T40). Untuk lokasi mitra, penjualan berasal dari `SELL_OUT_INFERRED` (klaim kode dalam, §21). Angkanya adalah **batas bawah**, karena tidak semua konsumen mengklaim. Rasio scan terhadap penjualan bisa dikalibrasi dari data toko sendiri, di mana penjualan nyata diketahui.
 
 ### 14.3 Peringatan dini anomali distribusi
 
-Sudah tersedia dari anomali `OUT_OF_REGION` (R3), dikelompokkan per partner dan per minggu (§8.4).
+- `GET /v1/anomalies?type=&partner=&since=`: anomali yang belum diselesaikan (`resolved_at IS NULL`), terbaru dulu, maksimal 200, `since` default 30 hari. `type` harus salah satu dari lima tipe anomali (selain itu 422).
+- `GET /v1/reports/leakage`: pallet yang unitnya dipindai di luar wilayah distributor penerima (`LeakageByPallet`, ≥ 3 unit **dan** ≥ 30% dari unit pallet itu yang pernah dipindai). Ini menjawab Kasus 1 tanpa inspeksi fisik: menyebut distributor dan pallet-nya (§8.4).
 
 ---
 
@@ -1358,16 +1400,27 @@ Semua path berawalan `/v1`. Format error seragam:
 | Method | Path | Prioritas | Fungsi | Sukses | Error utama |
 |---|---|---|---|---|---|
 | `POST` | `/v1/verify` | P0 | Verifikasi keaslian + anomali | 200 | 422 input tidak valid |
-| `POST` | `/v1/orders` | P0 | Buat order + reservasi | 201 (baru), 200 (idempotency key sama) | 409 `INSUFFICIENT_STOCK`; 422 (termasuk `UNKNOWN_LOCATION`, `UNKNOWN_SKU`) |
+| `POST` | `/v1/orders` | P0 | Buat order + reservasi | 201 (baru), 200 (idempotency key sama) | 409 `INSUFFICIENT_STOCK`; 422 (termasuk `UNKNOWN_LOCATION`, `UNKNOWN_SKU`, `IDEMPOTENCY_KEY_REUSED`) |
 | `GET` | `/v1/orders/{id}` | P0 | Lihat order dan statusnya | 200 | 404 `ORDER_NOT_FOUND` |
 | `POST` | `/v1/orders/{id}/pay` | P0 | Mock pembayaran | 200 (termasuk jika sudah dibayar) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_EXPIRED`, `INVALID_ORDER_STATUS` |
 | `POST` | `/v1/orders/{id}/cancel` | P0 | Batal + lepas stok | 200 (termasuk jika sudah batal/kedaluwarsa) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_NOT_CANCELLABLE` |
 | `POST` | `/v1/pos/sync` | P0 | Rekonsiliasi transaksi offline | 200 (hasil per transaksi, urut `local_seq`) | 404 `STORE_NOT_FOUND`; 422 jika amplop body tidak valid. Transaksi yang rusak secara teknis tidak menggagalkan batch: hasilnya `REJECTED`. |
-| `POST` | `/v1/orders/{id}/fulfill` | P1 | Scan serial → `SOLD` | 200 | 404, 409, 422 |
-| `POST` | `/v1/shipments/ship` | P2 | Kirim pallet/karton | 200 | 409 `INVALID_SERIAL_STATUS` |
-| `POST` | `/v1/shipments/receive` | P2 | Terima pallet/karton | 200 | 409 |
+| `POST` | `/v1/orders/{id}/fulfill` | P1 | Scan serial → `SOLD`, order `FULFILLED` (idempoten) | 200 | 404 `ORDER_NOT_FOUND`, `SERIAL_NOT_FOUND`; 409 `INVALID_ORDER_STATUS`, `INVALID_SERIAL_STATUS`; 422 |
+| `POST` | `/v1/orders/{id}/reallocate` | P1 | Pindahkan order `NEEDS_REALLOCATION` ke lokasi lain | 200 | 404; 409 `INVALID_ORDER_STATUS`, `INSUFFICIENT_STOCK`; 422 `UNKNOWN_LOCATION` |
+| `POST` | `/v1/production/batches` | P1 | Cetak batch: pallet, karton, unit dengan kode acak | 201 | 409 `BATCH_EXISTS`; 422 (SKU/lokasi tidak dikenal, bukan pabrik, `pallets` di luar 1–10) |
+| `GET` | `/v1/serials/{code}` | P1 | Penelusuran: batch, lokasi, partner, rantai container, riwayat | 200 | 404 `SERIAL_NOT_FOUND`; 422 |
+| `POST` | `/v1/serials/{code}/quarantine` | P1 | Karantina satu unit (`reason` wajib) | 200 | 404; 409 `INVALID_SERIAL_STATUS`; 422 |
+| `POST` | `/v1/serials/{code}/release` | P1 | Lepas karantina | 200 | 404; 409 `INVALID_SERIAL_STATUS` |
+| `POST` | `/v1/shipments/ship` | P1 | Kirim pallet/karton/unit (mengikat unit ke partner) | 200 | 404 `SERIAL_NOT_FOUND`; 409 `INVALID_SERIAL_STATUS`, `MIXED_CONTAINER`, `INSUFFICIENT_STOCK`; 422 |
+| `POST` | `/v1/shipments/receive` | P1 | Terima container (pabrik → gudang pusat, atau shipment → tujuan) | 200 | 404; 409 `INVALID_SERIAL_STATUS`, `WRONG_LOCATION`, `MIXED_CONTAINER`; 422 |
 | `POST` | `/v1/pos/heartbeat` | P0 | Tandai perangkat POS online (`store_code`, `device_id`) | 204 | 404 `STORE_NOT_FOUND`; 409 `DEVICE_STORE_MISMATCH`; 422 |
-| `GET` | `/v1/stock?sku=&location=` | P2 | Lihat ATP | 200 | 404 |
+| `GET` | `/v1/stock?sku=&location=` | P1 | Visibilitas stok terpadu + Days of Inventory | 200 | — |
+| `GET` | `/v1/anomalies?type=&partner=&since=` | P1 | Anomali terbuka | 200 | 422 |
+| `GET` | `/v1/reports/leakage` | P1 | Pallet yang bocor ke luar wilayah | 200 | — |
+| `GET` | `/v1/reports/sell-out-signal?from=&to=` | P1 | Per distributor per minggu: unit dikirim vs unit dipindai | 200 | 422 |
+| `GET` | `/v1/pos/gaps?store=` | P1 | Nomor `local_seq` yang dilompati | 200 | 404 `STORE_NOT_FOUND` |
+| `POST` | `/v1/points/claims` | P1 | Klaim poin dengan kode lapis dalam | 201 | 409 `ALREADY_CLAIMED`; 422 `PROOF_REJECTED`, `INVALID_INPUT` |
+| `GET` | `/v1/points/members/{id}` | P1 | Poin dan klaim satu member | 200 | 422 |
 | `GET` | `/healthz` | P0 | Health check (ping DB) | 200 | 503 |
 
 Semua route didaftarkan di satu fungsi, `api.NewRouter(svc, logger, cfg.HTTP)`, di bawah `r.Route("/v1", ...)` (chi). **Batas input** (di batas kepercayaan, `api/pos.go`): body maksimal 1 MiB, tepat satu objek JSON (data di belakangnya ditolak), maksimal 500 transaksi per sync, 100 item per transaksi atau order, dan `device_id` maksimal 128 karakter. Pelanggaran → 422.
@@ -1598,6 +1651,188 @@ POST /v1/pos/heartbeat (api)
 
 R: `*store.Store`.
 
+### 16.7 `POST /v1/production/batches` dan `GET /v1/serials/{code}`
+
+Production:
+```ts
+POST /v1/production/batches (api)
+  → decodeBody                       // batas: batch_code, pallets 1–10, unit_labels
+  → app.CreateBatch
+    → pgx.BeginFunc
+      → GetSKUByCode, GetLocationByCode   // lokasi harus FACTORY
+      → InsertBatch                       // ON CONFLICT (code) DO NOTHING
+      → InsertSerials ×3                  // pallet, karton, unit: satu statement per level
+      → SetInnerCodeHashes                // hash kode lapis dalam per unit
+      → InsertBatchSerialEvents           // satu baris PACKING per serial
+  → 201 BatchView
+
+GET /v1/serials/{code} (api)
+  → domain.ParseSerialCode
+  → app.TraceSerial
+    → GetSerialTrace, ListSerialAncestors (CTE rekursif ke atas), CountUnitsUnder (ke bawah), ListSerialEvents
+  → 200 SerialTrace
+```
+
+Tests:
+```ts
+TestNewSerialCode (unit: T24)
+TestIntegration_CreateBatch (T25), _TraceSerial, TestIntegration_ProductionHTTP (T26)
+```
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `GetSKUByCode`, `GetLocationByCode` | Tidak ada | Escape | 422 `UNKNOWN_SKU` / `UNKNOWN_LOCATION` |
+| lokasi | Bukan `FACTORY`, atau `expires_on` bukan tanggal depan | Escape | 422 |
+| `InsertBatch` | 0 baris | Escape | 409 `BATCH_EXISTS`, transaksi dibatalkan |
+| `InsertSerials` | Kode bentrok (`UNIQUE`) | Die | 500 (peluang ~1 : 3,6 × 10¹⁶) |
+| `GetSerialTrace` | Kode tidak ada | Escape | 404 `SERIAL_NOT_FOUND` |
+
+R: tidak ada stok yang berubah: `PRODUCED` tidak dihitung di `on_hand`.
+
+### 16.8 `POST /v1/shipments/ship` dan `receive`
+
+Production:
+```ts
+POST /v1/shipments/ship (api)
+  → decodeBody
+  → app.Ship
+    → pgx.BeginFunc
+      → ListContainerTree            // FOR UPDATE, urut id; semua baris harus satu status + satu lokasi
+      → GetLocationByCode
+      → moveSerials                  // CanTransition + UPDATE ... status = from + serial_event
+      → shipOut                      // UPDATE on_hand WHERE ATP >= n + stock_movement
+  → 200 ShipmentView
+
+POST /v1/shipments/receive (api)
+  → app.Receive
+    → pgx.BeginFunc
+      → ListContainerTree, GetLocationByCode
+      → moveSerials                  // PRODUCED → IN_WAREHOUSE, atau IN_TRANSIT → IN_STOCK
+      → receiveStock                 // upsert on_hand += n + stock_movement
+```
+
+Tests:
+```ts
+TestIntegration_Shipment_FullJourney (T27), _CannotShipReservedStock (T28), _Race (T29), _Refused (T30), TestIntegration_ShipmentHTTP
+```
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `ListContainerTree` | Kode tidak ada | Escape | 404 `SERIAL_NOT_FOUND` |
+| `ListContainerTree` | Status atau lokasi campuran | Escape | 409 `MIXED_CONTAINER` |
+| `moveSerials` | `CanTransition` salah | Escape | 409 `INVALID_SERIAL_STATUS` |
+| `moveSerials` | Baris berubah ≠ baris terkunci | Die | `ErrStaleStatus` (tidak mungkin: baris terkunci) |
+| `shipOut` | 0 baris (stok dijanjikan ke order) | Escape | 409 `INSUFFICIENT_STOCK`, semua perubahan dibatalkan |
+| `Receive` | Lokasi bukan tujuan shipment | Escape | 409 `WRONG_LOCATION` |
+
+R: urutan kunci serial → stok (global §12.4). Yang kalah dalam balapan melihat status baru setelah menunggu kunci, jadi mendapat `INVALID_SERIAL_STATUS` atau `INVALID_INPUT` ("sudah di tujuan").
+
+### 16.9 `POST /v1/serials/{code}/quarantine` dan `release`
+
+Production:
+```ts
+POST /v1/serials/{code}/quarantine (api)
+  → app.Quarantine
+    → pgx.BeginFunc
+      → GetSerialForUpdate           // FOR UPDATE; harus UNIT
+      → transitionSerial             // → QUARANTINE
+      → AdjustQuarantine, InsertStockMovement
+    → resolveOversell                // di luar transaksi karantina (§11.4)
+    → TraceSerial
+```
+
+Tests:
+```ts
+TestIntegration_Quarantine_ChangesAvailability (T31), _PromisedUnit (T32), TestIntegration_OperationsHTTP (T47)
+```
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `reason` | Kosong atau > 200 karakter | Escape | 422 |
+| `GetSerialForUpdate` | Tidak ada / bukan unit | Escape | 404 / 422 |
+| `transitionSerial` | Bukan `IN_WAREHOUSE`/`IN_STOCK` (release: bukan `QUARANTINE`) | Escape | 409 `INVALID_SERIAL_STATUS` |
+| `AdjustQuarantine` | 0 baris | Die | 500 (I1 rusak) |
+
+### 16.10 `POST /v1/orders/{id}/fulfill` dan `reallocate`
+
+Production:
+```ts
+POST /v1/orders/{id}/fulfill (api)
+  → decodeBody, ParseSerialCode per kode
+  → app.FulfillOrder
+    → pgx.BeginFunc
+      → LockOrder                    // orders dulu (§12.4); PAID, atau FULFILLED dengan serial yang sama
+      → GetOrderItems
+      → LockSerialsByCodes           // satu query, urut id
+      → transitionSerial per unit    // → SOLD
+      → SetSerialsOrder, FulfillStock + stock_movement
+      → SetOrderStatus FULFILLED
+
+POST /v1/orders/{id}/reallocate (api)
+  → app.ReallocateOrder
+    → pgx.BeginFunc
+      → LockOrder                    // harus NEEDS_REALLOCATION
+      → GetLocationByCode, GetOrderView, GetOrderItems
+      → reserve                      // ReserveStock urut sku_id
+      → ReallocateOrder              // lokasi baru, status PAID/PENDING_PAYMENT dari paid_at
+```
+
+Tests:
+```ts
+TestIntegration_Fulfill (T33), _Fulfill_Refused (T34), _Fulfill_VsCancel (T35), _Fulfill_VsPosSale (T36)
+TestIntegration_Reallocate (T37), _Reallocate_Refused (T38)
+```
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `LockOrder` | Tidak ada | Escape | 404 `ORDER_NOT_FOUND` |
+| status order | Fulfill: bukan `PAID`; reallocate: bukan `NEEDS_REALLOCATION` | Escape | 409 `INVALID_ORDER_STATUS` |
+| `LockSerialsByCodes` | Jumlah baris ≠ jumlah kode | Escape | 404 `SERIAL_NOT_FOUND` |
+| validasi unit | Duplikat, bukan unit, lokasi lain, jumlah per SKU ≠ qty | Escape | 422 |
+| `transitionSerial` | Status bukan `IN_WAREHOUSE`/`IN_STOCK` | Escape | 409 `INVALID_SERIAL_STATUS` |
+| `FulfillStock` | 0 baris | Die | 500 (I2 rusak) |
+| `reserve` | `ErrInsufficientStock` | Escape | 409, order tetap `NEEDS_REALLOCATION` |
+
+### 16.11 `POST /v1/points/claims`
+
+Production:
+```ts
+POST /v1/points/claims (api)
+  → decodeBody, ParseSerialCode      // member_id > 0, inner_code wajib
+  → app.ClaimPoints
+    → pgx.BeginFunc
+      → GetSerialForClaim            // FOR UPDATE
+      → domain.InnerCodeMatches      // hash, perbandingan waktu-konstan
+      → transitionSerial             // IN_STOCK → VERIFIED (lokasi harus PARTNER)
+      → sellOutInferred              // on_hand -= 1 + stock_movement SELL_OUT_INFERRED
+      → CountRecentClaims, InsertPointClaim   // PENDING, atau HELD jika ≥ 10 klaim / 24 jam
+  → 201 ClaimView
+```
+
+Tests:
+```ts
+TestIntegration_ClaimPoints (T44), _Refused (T45), _Race (T46)
+```
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `GetSerialForClaim` | Tidak ada, bukan unit, kode salah | Escape | 422 `PROOF_REJECTED` (ketiganya tidak dibedakan, agar kode tidak bisa ditebak lewat respons) |
+| status | `VERIFIED` (sudah diklaim) | Escape | 409 `ALREADY_CLAIMED` |
+| status/lokasi | Bukan `IN_STOCK` di lokasi `PARTNER` | Escape | 422 `PROOF_REJECTED` |
+| `sellOutInferred` | 0 baris | Die | 500 (I1 rusak) |
+| `InsertPointClaim` | `UNIQUE (serial_id)` | Die | Tidak mungkin: serial terkunci dan sudah `VERIFIED` |
+
+### 16.12 Endpoint baca command center
+
+`GET /v1/stock`, `/v1/anomalies`, `/v1/reports/leakage`, `/v1/reports/sell-out-signal`, `/v1/pos/gaps`, `/v1/points/members/{id}` hanya membaca dan tidak memakai transaksi eksplisit. `StockOverview` memanggil `ListStockOverview` lalu `domain.DaysOfInventory`/`RunoutWarning`; `Anomalies` memvalidasi `type` terhadap daftar tipe anomali; `Leakage` memanggil `LeakageByPallet` dengan ambang tetap.
+
+Tests: `TestIntegration_StockOverview` (T39), `_DaysOfInventory` (T40), `TestIntegration_LeakageAndAnomalies` (T41, termasuk laporan sell-out), `TestIntegration_PosGaps` (T43), `TestDaysOfInventory` (unit), `TestIntegration_OperationsHTTP` (T47).
+
+| Node | E | Jenis | Hasil |
+|---|---|---|---|
+| `type` / `since` / `from` / `to` | Tidak valid, atau `to` ≤ `from` | Escape | 422 |
+| `PosGaps` | Toko tidak dikenal | Escape | 404 `STORE_NOT_FOUND` |
+
 ---
 
 ## 17. Ringkasan Strategi Konkurensi
@@ -1616,6 +1851,12 @@ R: `*store.Store`.
 | POS retry batch / dua request sync bersamaan | Double-deduction / double-charge | PK UUID + `ON CONFLICT DO NOTHING` (§13.4) | T5, T6 |
 | POS offline vs order online | Split-brain | Fakta fisik diterima + order terbaru dilepas di Tx2 (§13.5) | T7 |
 | Serial dijual dua kali | Data ganda | `FOR UPDATE` + validasi status | T10 |
+| Dua pengiriman container yang sama (atau pallet dan kartonnya) bersamaan | Unit berpindah dua kali, deadlock | `ListContainerTree` mengunci semua baris urut `id`; status dicek setelah kunci | T29 |
+| Stok yang dijanjikan ke order ikut dikirim | Reservasi tanpa barang | `UPDATE ... WHERE on_hand - reserved - quarantine >= n` | T28 |
+| Fulfill vs cancel / vs POS untuk unit yang sama | Unit terjual dua kali, stok dipotong dua kali | `orders` dikunci lebih dulu; serial `FOR UPDATE`; status dicek | T35, T36 |
+| Dua member mengklaim unit yang sama | Poin ganda | `FOR UPDATE` pada serial + `UNIQUE (point_claim.serial_id)` | T46 |
+| Unit rusak yang sedang dijanjikan | Janji tanpa barang | Karantina diizinkan, lalu `resolveOversell` | T32 |
+| `Idempotency-Key` dipakai ulang dengan isi lain | Order salah dikembalikan diam-diam | `orders.request_hash` | T47 |
 
 Level isolasi: **`READ COMMITTED`** (default PostgreSQL) untuk semua operasi. Tidak ada operasi yang membutuhkan `SERIALIZABLE`, karena setiap keputusan kritis dilakukan oleh satu statement atomik atau dilindungi row lock.
 
@@ -1680,6 +1921,8 @@ Pola test konkurensi: N goroutine menunggu satu channel `start`, lalu `close(sta
 | T17 | P0 | Hash payload POS: isi sama dengan urutan field/spasi JSON berbeda; lalu isi berbeda 1 item | Isi sama → hash sama. Isi beda → hash beda. Dasar `DUPLICATE` vs `REJECTED` (§13.4). |
 | T18 | P1 | Tabel kombinasi aturan → verdict (§10.4) | Contoh: tanpa aturan → `GENUINE`; R1 → `GENUINE_WITH_WARNING`; dipindai ≥ 3 device berbeda → `GENUINE_WITH_WARNING`; dipindai 2 device tanpa aturan lain → `GENUINE`; R0 → `NOT_FOUND`. |
 | T19 | P1 | Setiap sentinel error → HTTP status (`api/errors.go`) | Contoh: `ErrInsufficientStock` → 409, input tidak valid → 422, error tak dikenal → 500. |
+| T24 | P1 | 5.000 kode serial acak dibuat | Semuanya lolos `ParseSerialCode` dan tidak ada yang kembar. |
+| T40 | P1 | `DaysOfInventory` dan `RunoutWarning` dengan tabel angka | Tanpa penjualan → tidak ada estimasi; unit karantina tidak dihitung; peringatan tepat di bawah 10 hari. |
 
 ### 18.6 Daftar integration test
 
@@ -1700,10 +1943,32 @@ Pola test konkurensi: N goroutine menunggu satu channel `start`, lalu `close(sta
 | T16 | P1 | Modul | 5 order `PENDING_PAYMENT` lewat `expires_at`, 2 belum. Jalankan sweeper 2× berurutan | Tepat 5 `EXPIRED`, `reserved` turun tepat 5 × qty, 2 order lain tidak tersentuh. |
 | T22 | P1 | Modul | (a) Toko dengan 2 device aktif: satu heartbeat segar, satu basi, lalu order D2C. (b) Semua device segar, lalu order `MARKETPLACE` ke toko itu. | Keduanya 409 `INSUFFICIENT_STOCK`: stok toko tidak bisa direservasi. |
 | T23 | P1 | Modul | 4 pallet: 2 dari 10 unit di luar wilayah; 4 dari 10; 4 dari 20; 0 dari 10 | Query pallet §8.4 (`LeakageByPallet`, ≥ 3 unit **dan** ≥ 30%) hanya mengembalikan pallet kedua: yang pertama di bawah 3 unit, yang ketiga hanya 20%. |
+| T25 | P1 | Modul | Batch 2 pallet dicetak | 2 pallet, 80 karton, 960 unit; semua kode unik dan terhubung lewat `parent_id`; semua `PRODUCED`; tidak ada stok berubah; satu event `PACKING` per serial. |
+| T26 | P1 | HTTP | Kontrak endpoint produksi dan penelusuran | 201; 409 `BATCH_EXISTS`; 422 untuk input tidak valid; 404 `SERIAL_NOT_FOUND`. |
+| T27 | P1 | Modul | Pabrik → gudang → kirim ke mitra → terima | Status, lokasi, `partner_id`, `on_hand` di kedua lokasi, 4 event per serial, I1–I3 benar. |
+| T28 | P1 | Modul | Ship pallet saat 1 unit sudah dipesan | 409 `INSUFFICIENT_STOCK`; tidak ada yang berubah. |
+| T29 | P1 | Modul | 6 ship pallet dan 2 ship karton yang sama bersamaan | Tepat satu menang; tidak ada deadlock. |
+| T30 | P1 | Modul | Receive/ship yang salah (lokasi, status, container campuran, kode tidak dikenal) | Setiap penolakan tidak mengubah apa pun. |
+| T31 | P1 | Modul | Karantina mengubah ATP; release mengembalikannya | ATP, `quarantine`, I3 benar; penolakan (alasan kosong, unit terjual) benar. |
+| T32 | P1 | Modul | Unit dikarantina saat dijanjikan ke order | Order terbaru → `NEEDS_REALLOCATION`, anomali `OVERSOLD`, I2 benar. |
+| T33 | P1 | Modul | Fulfill order `PAID` | Unit `SOLD` dengan `order_id`; `on_hand` dan `reserved` turun; fulfill ulang dengan unit sama = no-op; unit bisa di-verify. |
+| T34 | P1 | Modul | Semua aturan penolakan fulfill | Tidak ada perubahan: order tetap `PAID`, tidak ada unit `SOLD`. |
+| T35 | P1 | Modul | 20 order: fulfill dan cancel bersamaan | Tiap order tepat satu hasil; I1–I3 benar. |
+| T36 | P1 | Modul | Unit terakhir: fulfill order online vs penjualan kasir, 10× | Unit terjual sekali; stok keluar sekali. |
+| T37 | P1 | Modul | Order yang kalah direalokasi (dibayar dan belum) | Kembali ke status semula di lokasi baru; I2 benar. |
+| T38 | P1 | Modul | Realokasi ke lokasi tanpa stok | 409; order tetap `NEEDS_REALLOCATION`. |
+| T39 | P1 | Modul | Stok terpadu setelah ship dan receive | `inbound` terlihat sebelum diterima; ATP benar sesudahnya. |
+| T41 | P1 | Modul | Unit alokasi Medan dipindai di Jakarta; laporan kebocoran, anomali, sell-out signal | Laporan menyebut distributor dan pallet; filter anomali benar. |
+| T42 | P1 | Modul | Batch POS: transaksi tengah rusak (stok tidak konsisten) | `ACCEPTED`, `REJECTED` (`DATA_INCONSISTENT`), `ACCEPTED`. |
+| T43 | P1 | Modul | `local_seq` 1, 2, 5, 6 | Lompatan 3–4 terdaftar. |
+| T44 | P1 | Modul | Klaim poin dengan kode lapis dalam | Unit `VERIFIED`, `on_hand` mitra −1, klaim `PENDING`; scan QR luar tidak membuat poin; hanya hash yang disimpan. |
+| T45 | P1 | Modul | Klaim ditolak (kode salah, unit lain, tidak dikenal, pallet, bukan di mitra, sudah diklaim) | 422 `PROOF_REJECTED` atau 409 `ALREADY_CLAIMED`; tidak ada perubahan. |
+| T46 | P1 | Modul | 10 member mengklaim unit yang sama bersamaan; satu member 12 klaim | Satu pemenang; klaim ke-11 `HELD`. |
+| T47 | P1 | HTTP | Kontrak endpoint karantina, fulfill, realokasi, command center, poin, `IDEMPOTENCY_KEY_REUSED` | Status dan kode error sesuai §15. |
 | **T20** | P0 | Migrasi | Container kosong: `store.Migrate` dijalankan 2× | Panggilan pertama membuat semua tabel. Panggilan kedua tidak mengubah apa pun. Versi di `goose_db_version` = jumlah file migrasi. |
 | T21 | P1 | HTTP | Kontrak endpoint order: tanpa `Idempotency-Key` → 422; create → 201; ulangi key sama → 200; stok kurang → 409 `INSUFFICIENT_STOCK`; cancel 2× → 200 dua kali; pay setelah `expires_at` → 409 `ORDER_EXPIRED` | Status HTTP dan format error sesuai §15. |
 
-Tiga test wajib assignment: **proteksi race condition pada stok** (T1), **validasi siklus status hologram** (T3/T4), dan **idempotensi sync offline** (T5/T6). T14 membuktikan klaim bebas deadlock di §12.4. T20 membuktikan skema yang dites sama dengan skema yang dijalankan API.
+Test tambahan untuk Pilar A–D dan Kasus 2–3 (T24–T47) memakai pola yang sama: PostgreSQL asli, balapan dengan goroutine, invariant I1–I3 di akhir. Tiga test wajib assignment: **proteksi race condition pada stok** (T1), **validasi siklus status hologram** (T3/T4), dan **idempotensi sync offline** (T5/T6). T14 membuktikan klaim bebas deadlock di §12.4. T20 membuktikan skema yang dites sama dengan skema yang dijalankan API.
 
 ### 18.7 Skenario `make demo`
 
@@ -1711,7 +1976,9 @@ Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
 1. Verifikasi: kode asli → `GENUINE`; kode karangan → `NOT_FOUND`; kode sama dari device di kota lain beberapa detik kemudian → `GENUINE_WITH_WARNING`; unit alokasi Medan dipindai di Jakarta → `GENUINE_WITH_WARNING`.
 2. Lonjakan order: 50 request paralel untuk stok 10 → tepat 10 sukses.
 3. POS offline: kirim batch sync yang sama 2 kali → kedua kalinya `DUPLICATE`, stok berkurang sekali.
-4. Split-brain (toko demo `online_buffer = 0`): kirim heartbeat toko, order online mereservasi unit terakhir toko, lalu POS sync menjual unit itu → order `NEEDS_REALLOCATION`.
+4. Split-brain (toko demo `online_buffer = 0`): kirim heartbeat toko, order online mereservasi unit terakhir toko, lalu POS sync menjual unit itu → order `NEEDS_REALLOCATION` (terlihat lewat `GET /v1/orders/{id}`).
+5. Pabrik sampai konsumen: cetak batch 2 pallet, terima di gudang pusat, kirim satu pallet ke Distributor Medan dan terima, pindai tiga unitnya dari Jakarta → laporan kebocoran menyebut distributor dan pallet; `GET /v1/anomalies` dan `GET /v1/stock`.
+6. Order online sampai konsumen, dan poin: order dari gudang → bayar → fulfill dengan unit yang di-scan; lalu klaim poin dengan kode lapis dalam unit di Medan (201), klaim kedua oleh member lain (409), tebakan kode (422), dan `GET /v1/points/members/{id}`.
 
 ---
 
@@ -1726,10 +1993,14 @@ Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
 | `online_buffer` toko | 1 unit. Toko demo di seed: 0, agar split-brain bisa diperagakan (T7, demo #4). | Unit terakhir disisakan untuk pembeli walk-in |
 | TTL reservasi | 15 menit | Cukup untuk membayar, tidak mengunci stok terlalu lama |
 | Order yang dikorbankan saat oversell | Belum dibayar dulu, lalu terbaru | Pelanggan yang sudah membayar paling akhir kalah; order lama lebih mungkin sudah di-picking |
-| Bukti terjual di lokasi mitra | Klaim kode dalam / struk (P2). Scan QR luar hanya dicatat. | Scan luar bisa dilakukan siapa saja di rak |
+| Bukti terjual di lokasi mitra | Klaim kode lapis dalam (struk: P2). Scan QR luar hanya dicatat. | Scan luar bisa dilakukan siapa saja di rak |
 | Peringatan "sudah dipindai" | ≥ 3 device berbeda, dihitung hanya sejak unit terjual | Calon pembeli atau keluarga yang memindai di rak tidak memicu peringatan |
 | Serial POS bermasalah | Tidak memotong stok; dicatat sebagai anomali | Stok berubah hanya jika serial berubah (I1 selalu benar) |
 | Ambang cluster kebocoran | ≥ 3 unit **dan** ≥ 30% dari unit pallet yang pernah dipindai | Relatif terhadap scan coverage; disetel ulang dari data |
+| Days of Inventory | Penjualan 14 hari terakhir; peringatan di bawah 10 hari (lead time 7 + safety 3) | Konstanta `domain.SalesWindowDays`, `domain.RunoutWarningDays` |
+| Poin per unit | 10; dapat ditukar setelah 72 jam masa tinjauan; lebih dari 10 klaim per member per 24 jam → `HELD` | Konstanta di `domain/points.go` |
+| Kode lapis dalam | 8 karakter acak (40 bit), hanya hash SHA-256 yang disimpan | Tidak bisa ditebak lewat API (tidak dibedakan dari kode tidak dikenal) dan tidak bocor lewat dump DB |
+| Batas input | 1 MiB per body; 500 transaksi per sync; 100 item per transaksi/order; 10 pallet per batch; 200 karakter alasan karantina | Di batas kepercayaan (`api`) |
 | `HUB` sebagai sumber order online | Ya | Stok hub ikut dijual |
 
 ---
@@ -1754,8 +2025,13 @@ Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
 | Heartbeat per perangkat, semua harus online | Tidak ada perangkat offline yang "tersembunyi" | Satu perangkat bermasalah membuat stok toko keluar dari online sampai dinonaktifkan ops |
 | Stok toko hanya untuk D2C | Konflik POS tidak pernah membatalkan order marketplace | Stok toko tidak ikut dijual di marketplace |
 | Sell-out mitra hanya dari klaim kode dalam / struk | Scan di rak tidak mencatat penjualan palsu | Angka sell-out mitra lebih rendah dari kenyataan (hanya yang mengklaim) |
-| `Idempotency-Key` order yang dipakai ulang dengan isi berbeda mengembalikan order lama | Sederhana: tidak ada kolom hash di `orders` | Bug klien yang salah memakai key tidak terdeteksi. POS sync membandingkan hash payload; untuk order bisa ditambah `request_hash` bila dibutuhkan. |
 | Kode serial demo di seed berurutan (`MG00000000001`) | Bisa diketik tangan saat demo | Hanya untuk demo: produksi memakai kode acak (§8.1) |
+| Satu container dipindahkan dengan satu `UPDATE ... ANY($ids)` (±520 baris per pallet) | Satu transaksi, kode sederhana, atomik | Transaksi lebih lama untuk pallet besar; untuk jutaan unit perlu dipecah per karton |
+| Kode lapis dalam dikembalikan sekali saat batch dibuat | Pencetak mendapat kodenya tanpa menyimpan teks asli di DB | Endpoint itu **harus** diproteksi di produksi; kode yang hilang tidak bisa dipulihkan, hanya dibuat ulang |
+| Klaim poin hanya dengan kode lapis dalam | Kasir/perantara tidak bisa membuat poin dari scan di rak | Klaim struk (OCR) dan tinjauan manual `HELD` belum ada; kode dari kemasan bekas yang dibuang masih bisa diklaim (batas kecepatan memperlambatnya) |
+| Karantina unit yang dijanjikan ke order selalu diizinkan | Fakta fisik menang, aturan sama dengan Kasus 4 | Order yang kalah dialihkan manual oleh ops (§12.8) |
+| Batch POS: transaksi dengan data tidak konsisten ditolak, bukan menggagalkan batch | Penjualan lain tetap masuk | Transaksi itu tidak tercatat sampai ops memperbaiki datanya; `REJECTED` tidak boleh di-retry |
+| Race "kekurangan basi" di oversell tidak punya test yang memaksa urutannya | Tanpa hook khusus test di kode produksi | Perilaku (tanpa kekurangan, tidak ada yang dikorbankan; dua sync pada kekurangan yang sama) dites; urutan persisnya dijamin oleh desain kunci (§13.5) |
 | Tanpa auth | Fokus pada inti assignment | **Wajib** ditambahkan sebelum produksi |
 
 ---
@@ -1766,12 +2042,14 @@ Strategi produk, batasan sistem (*trade-offs*), dan metrik bisnis ada di `PRODUC
 
 | Kasus | Komponen sistem | Status di prototype |
 |---|---|---|
-| **1. Distribusi & Logistik** (Kebocoran Wilayah & Gray-Market Diversion) | `serial.parent_id` (agregasi), `serial.partner_id`, `serial_event` (jejak), R3 `OUT_OF_REGION`, query cluster per pallet (§8.4) | R3 dikode (P0). `partner_id` diisi lewat seed (ship/receive P2). Query cluster ditulis dan dites. |
-| **2. CRM & Loyalty** (Poin Reward Konsumen & Anti-Fraud Scan) | Status `SOLD` (kanal sendiri), klaim kode dalam / struk (kanal mitra), tabel `point_claim` | Verifikasi dikode (P0). Poin dan klaim: hanya desain. |
-| **3. Marketing** (Tracking Leads-to-Purchase: Iklan Instagram ke Penjualan Indomaret) | `scan_event` (lokasi, waktu), penelusuran serial ke distributor dan rayon | Tidak dikode |
-| **4. POS OwnStore** (Resiliensi Offline-First & Split-Brain Stok) | Heartbeat per perangkat + buffer, stok toko hanya D2C, sync idempoten, `OVERSOLD` di Tx2 | Dikode (P0) |
+| **1. Distribusi & Logistik** (Kebocoran Wilayah & Gray-Market Diversion) | `serial.parent_id` (agregasi), `serial.partner_id`, `serial_event` (jejak), produksi + ship/receive, R3 `OUT_OF_REGION`, `GET /v1/reports/leakage` | Dikode: dari batch sampai laporan kebocoran per pallet dan distributor (demo #5). Test-buy dan penegakan kontrak: proses, bukan sistem. |
+| **2. CRM & Loyalty** (Poin Reward Konsumen & Anti-Fraud Scan) | Status `SOLD` (kanal sendiri), klaim kode lapis dalam (kanal mitra), tabel `point_claim` | Dikode minimal: klaim kode dalam, satu serial satu klaim, batas kecepatan, masa tinjauan (demo #6). Klaim struk, tinjauan manual, penukaran, poin otomatis POS/D2C: hanya desain. |
+| **3. Marketing** (Tracking Leads-to-Purchase: Iklan Instagram ke Penjualan Indomaret) | `scan_event` (lokasi, waktu), penelusuran serial ke distributor, `GET /v1/reports/sell-out-signal` | Dikode: data masukan per rayon per minggu (unit dikirim vs dipindai). Voucher dinamis, geofence, dan eksperimen geo-holdout hanya di `PRODUCT_DEFENSE.md`. |
+| **4. POS OwnStore** (Resiliensi Offline-First & Split-Brain Stok) | Heartbeat per perangkat + buffer, stok toko hanya D2C, sync idempoten, `OVERSOLD` di Tx2, realokasi manual, deteksi lompatan `local_seq` | Dikode |
 
-### Desain tabel klaim poin (Kasus 2, tidak dikode)
+### Tabel klaim poin (Kasus 2)
+
+Versi lengkap di bawah adalah desain. **Yang dibangun** (migrasi `00003`): `proof_type` hanya `INNER_CODE`, `status` hanya `PENDING`/`HELD`, tanpa `receipt_key`. `PENDING` berubah menjadi `AVAILABLE` secara turunan saat dibaca, setelah `available_at` lewat (`GET /v1/points/members/{id}`), tanpa sweeper. Kolom dan status lainnya (struk, `REVOKED`) ditambahkan saat fiturnya dibangun.
 
 ```sql
 CREATE TABLE point_claim (

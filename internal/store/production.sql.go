@@ -28,6 +28,27 @@ func (q *Queries) CountUnitsUnder(ctx context.Context, parentID *int64) (int32, 
 	return column_1, err
 }
 
+const getLocationByID = `-- name: GetLocationByID :one
+SELECT id, code, name, type, partner_id, lat, lng, online_sellable, online_buffer FROM location WHERE id = $1
+`
+
+func (q *Queries) GetLocationByID(ctx context.Context, id int64) (Location, error) {
+	row := q.db.QueryRow(ctx, getLocationByID, id)
+	var i Location
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.Type,
+		&i.PartnerID,
+		&i.Lat,
+		&i.Lng,
+		&i.OnlineSellable,
+		&i.OnlineBuffer,
+	)
+	return i, err
+}
+
 const getSKUByCode = `-- name: GetSKUByCode :one
 SELECT id, units_per_carton, cartons_per_pallet FROM sku WHERE code = $1
 `

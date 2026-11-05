@@ -83,3 +83,6 @@ INSERT INTO serial_event (serial_id, from_status, to_status, location_id, partne
 SELECT t.id, sqlc.arg(from_status)::serial_status, sqlc.arg(to_status)::serial_status,
        sqlc.arg(location_id), sqlc.narg(partner_id), sqlc.arg(ref_type)::text, sqlc.arg(ref_id)::text
 FROM unnest(sqlc.arg(ids)::bigint[]) AS t(id);
+
+-- name: GetLocationByID :one
+SELECT * FROM location WHERE id = $1;

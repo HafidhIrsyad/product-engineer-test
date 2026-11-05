@@ -56,3 +56,42 @@ echo "the online order now (it lost its stock to the physical sale):"
 curl -sS "$BASE_URL/v1/orders/$ORDER_ID"; echo
 echo "the online customer tries to pay it anyway:"
 post "/v1/orders/$ORDER_ID/pay" ''
+
+step "5. Factory to consumer: print a batch, move it, and see leakage without opening a box"
+EXPIRES=$(date -u -v+1y +%F 2>/dev/null || date -u -d '+1 year' +%F)
+BATCH_CODE="B$(date +%s)"
+echo "print a batch of 2 pallets at the factory:"
+curl -sS -o /tmp/demo.batch -w '%{http_code}' -X POST "$BASE_URL/v1/production/batches" -H 'Content-Type: application/json' \
+  -d "{\"sku_code\":\"MGN-PROT-500\",\"batch_code\":\"$BATCH_CODE\",\"location_code\":\"FACTORY-01\",\"expires_on\":\"$EXPIRES\",\"pallets\":2,\"unit_labels\":true}"
+echo " pallets: $(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | wc -l | tr -d ' ')   $(grep -oE '"cartons":[0-9]+,"units":[0-9]+' /tmp/demo.batch)"
+PALLET_A=$(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | sed -n 1p | cut -d'"' -f4)
+PALLET_B=$(grep -oE '"code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | sed -n 2p | cut -d'"' -f4)
+UNITS=($(grep -oE '"serial_code":"MG[0-9A-Z]{11}"' /tmp/demo.batch | cut -d'"' -f4))
+echo "receive both pallets at the central warehouse:"
+post /v1/shipments/receive "{\"container_code\":\"$PALLET_A\",\"location_code\":\"WH-JKT\"}"
+post /v1/shipments/receive "{\"container_code\":\"$PALLET_B\",\"location_code\":\"WH-JKT\"}"
+echo "ship pallet A to Distributor Medan, who receives it:"
+post /v1/shipments/ship "{\"container_code\":\"$PALLET_A\",\"to_location_code\":\"DIST-MDN\"}"
+post /v1/shipments/receive "{\"container_code\":\"$PALLET_A\",\"location_code\":\"DIST-MDN\"}"
+echo "three units of that pallet are scanned by consumers in Jakarta, outside Medan's region:"
+for i in 0 1 2; do post /v1/verify "{\"code\":\"${UNITS[$i]}\",\"device_id\":\"jkt-phone-$i\",$JAKARTA}" | cut -c1-60; done
+echo "the leakage report names the distributor and the pallet:"
+curl -sS "$BASE_URL/v1/reports/leakage"; echo
+echo "open anomalies of that kind:"
+curl -sS "$BASE_URL/v1/anomalies?type=OUT_OF_REGION" | cut -c1-300; echo
+echo "stock everywhere (the pallet shipped to Medan is on hand there, the rest in the warehouse):"
+curl -sS "$BASE_URL/v1/stock?sku=MGN-PROT-500"; echo
+
+step "6. Online order to consumer, and loyalty points for a unit bought at a partner"
+echo "order a unit from the warehouse, pay, and let the picker scan it (a unit of pallet B):"
+post /v1/orders '{"channel":"D2C","location_code":"WH-JKT","items":[{"sku_code":"MGN-PROT-500","qty":1}]}' -H "Idempotency-Key: $(uuid)"
+FULFILL_ID=$(sed -E 's/.*"id":([0-9]+).*/\1/' /tmp/demo.body)
+post "/v1/orders/$FULFILL_ID/pay" ''
+post "/v1/orders/$FULFILL_ID/fulfill" "{\"serial_codes\":[\"${UNITS[${#UNITS[@]}-1]}\"]}"
+echo "a buyer at Distributor Medan opens the pack and claims points with the code under the seal:"
+post /v1/points/claims '{"member_id":7,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
+echo "someone else tries the same unit, and someone guesses a code:"
+post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000402","inner_code":"DEMO0402"}'
+post /v1/points/claims '{"member_id":8,"serial_code":"MG00000000401","inner_code":"GUESS123"}'
+echo "the member's points (they wait out a review window before they can be redeemed):"
+curl -sS "$BASE_URL/v1/points/members/7"; echo
