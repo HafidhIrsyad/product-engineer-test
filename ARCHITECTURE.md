@@ -1402,11 +1402,11 @@ POST /v1/verify (api)
   → decodeVerify                     // batas: code, device_id, lat/lng opsional
   → app.Verify
     → pgx.BeginFunc
-      → GetSerialByCodeForUpdate
-      → GetScanContext               // scan terakhir dari device lain + jumlah device berbeda
+      → GetSerialForVerify           // FOR UPDATE; join SKU, batch, wilayah distributor
+      → GetPreviousOtherDeviceScan, CountOtherScanDevices, CountScans
       → domain.Evaluate              // fungsi murni: R1–R3 + verdict (§10.3–10.4)
       → InsertAnomaly                // hanya jika ada aturan yang terpicu
-      → TransitionSerial             // hanya SOLD → VERIFIED
+      → VerifySerial                 // hanya SOLD → VERIFIED (+ serial_event)
       → InsertScanEvent
   → 200 VerifyView
 ```
@@ -1425,8 +1425,8 @@ TestIntegration_Verify (T12)
 | Node | E | Jenis | Hasil |
 |---|---|---|---|
 | `decodeVerify` | `code` kosong, format salah, `lat` tanpa `lng` | Escape | 422 |
-| `GetSerialByCodeForUpdate` | Kode tidak ada | Escape | 200 `NOT_FOUND`, `scan_event` tetap dicatat |
-| `TransitionSerial` | 0 baris | Die | 500. Tidak mungkin terjadi karena baris sudah dikunci; jika terjadi, ada bug. |
+| `GetSerialForVerify` | Kode tidak ada | Escape | 200 `NOT_FOUND`, `scan_event` tetap dicatat |
+| `VerifySerial` | 0 baris | Die | 500. Tidak mungkin terjadi karena baris sudah dikunci dan statusnya `SOLD`; jika terjadi, ada bug. |
 | Semua | Error DB | Die | 500 |
 
 R: `*store.Store`. Data wilayah partner dibaca dari DB; jarak dihitung oleh `domain.HaversineKm` (fungsi murni).
@@ -1685,7 +1685,7 @@ Pola test konkurensi: N goroutine menunggu satu channel `start`, lalu `close(sta
 | T15 | P1 | Modul | Order dengan `expires_at` sudah lewat: pay dan sweeper dijalankan bersamaan, 20× | Setiap kali tepat satu pemenang: `PAID` dengan reservasi utuh, **atau** `EXPIRED` dengan reservasi dilepas. Tidak pernah `PAID` tanpa reservasi. |
 | T16 | P1 | Modul | 5 order `PENDING_PAYMENT` lewat `expires_at`, 2 belum. Jalankan sweeper 2× berurutan | Tepat 5 `EXPIRED`, `reserved` turun tepat 5 × qty, 2 order lain tidak tersentuh. |
 | T22 | P1 | Modul | (a) Toko dengan 2 device aktif: satu heartbeat segar, satu basi, lalu order D2C. (b) Semua device segar, lalu order `MARKETPLACE` ke toko itu. | Keduanya 409 `INSUFFICIENT_STOCK`: stok toko tidak bisa direservasi. |
-| T23 | P1 | Modul | Pallet dengan 10 unit dipindai: (a) 2 di luar wilayah, (b) 3 di luar wilayah, (c) 4 dari 20 unit dipindai di luar wilayah | Query cluster §8.4 hanya mengembalikan (b): (a) di bawah 3 unit, (c) di bawah 30%. |
+| T23 | P1 | Modul | 4 pallet: 2 dari 10 unit di luar wilayah; 4 dari 10; 4 dari 20; 0 dari 10 | Query pallet §8.4 (`LeakageByPallet`, ≥ 3 unit **dan** ≥ 30%) hanya mengembalikan pallet kedua: yang pertama di bawah 3 unit, yang ketiga hanya 20%. |
 | **T20** | P0 | Migrasi | Container kosong: `store.Migrate` dijalankan 2× | Panggilan pertama membuat semua tabel. Panggilan kedua tidak mengubah apa pun. Versi di `goose_db_version` = jumlah file migrasi. |
 | T21 | P1 | HTTP | Kontrak endpoint order: tanpa `Idempotency-Key` → 422; create → 201; ulangi key sama → 200; stok kurang → 409 `INSUFFICIENT_STOCK`; cancel 2× → 200 dua kali; pay setelah `expires_at` → 409 `ORDER_EXPIRED` | Status HTTP dan format error sesuai §15. |
 
@@ -1694,7 +1694,7 @@ Tiga test wajib assignment: **proteksi race condition pada stok** (T1), **valida
 ### 18.7 Skenario `make demo`
 
 Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
-1. Verifikasi: kode asli → `GENUINE`; kode karangan → `NOT_FOUND`; kode sama dari device di kota lain 10 menit kemudian → `GENUINE_WITH_WARNING`.
+1. Verifikasi: kode asli → `GENUINE`; kode karangan → `NOT_FOUND`; kode sama dari device di kota lain beberapa detik kemudian → `GENUINE_WITH_WARNING`; unit alokasi Medan dipindai di Jakarta → `GENUINE_WITH_WARNING`.
 2. Lonjakan order: 50 request paralel untuk stok 10 → tepat 10 sukses.
 3. POS offline: kirim batch sync yang sama 2 kali → kedua kalinya `DUPLICATE`, stok berkurang sekali.
 4. Split-brain (toko demo `online_buffer = 0`): kirim heartbeat toko, order online mereservasi unit terakhir toko, lalu POS sync menjual unit itu → order `NEEDS_REALLOCATION`.

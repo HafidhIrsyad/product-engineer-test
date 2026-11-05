@@ -44,8 +44,8 @@ INSERT INTO serial_event (serial_id, from_status, to_status, location_id, ref_ty
 VALUES (sqlc.arg(serial_id), sqlc.arg(from_status), sqlc.arg(to_status), sqlc.arg(location_id), sqlc.arg(ref_type), sqlc.arg(ref_id));
 
 -- name: InsertAnomaly :exec
-INSERT INTO anomaly (type, serial_id, location_id, ref_type, ref_id, details)
-VALUES (sqlc.arg(type), sqlc.arg(serial_id), sqlc.arg(location_id), sqlc.arg(ref_type), sqlc.arg(ref_id), sqlc.arg(details));
+INSERT INTO anomaly (type, serial_id, location_id, partner_id, ref_type, ref_id, details)
+VALUES (sqlc.arg(type), sqlc.arg(serial_id), sqlc.arg(location_id), sqlc.arg(partner_id), sqlc.arg(ref_type), sqlc.arg(ref_id), sqlc.arg(details));
 
 -- name: DecreaseOnHand :execrows
 -- A POS sale takes physical units out of the store. CHECK (on_hand >= 0) guards the counter.

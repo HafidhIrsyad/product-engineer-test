@@ -165,30 +165,53 @@ func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) []s
 // SetStockAs is SetStock with an explicit serial status (IN_STOCK for stores).
 func SetStockAs(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int, status string) []string {
 	t.Helper()
-	ctx := context.Background()
-
-	var batchID int64
-	require.NoError(t, p.QueryRow(ctx, `
-		INSERT INTO production_batch (code, sku_id, produced_at, expires_on)
-		VALUES ('B-' || $1::bigint || '-' || $2::bigint, $1::bigint, now(), current_date + 365)
-		ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
-		RETURNING id`, skuID, locationID).Scan(&batchID))
-
 	codes := make([]string, 0, n)
 	for range n {
-		code := fmt.Sprintf("MG%011d", serialCounter.Add(1))
-		_, err := p.Exec(ctx, `
-			INSERT INTO serial (code, level, sku_id, batch_id, status, location_id)
-			VALUES ($1, 'UNIT', $2, $3, $4::serial_status, $5)`, code, skuID, batchID, status, locationID)
-		require.NoError(t, err)
+		_, code := InsertSerial(t, p, SerialSpec{SKUID: skuID, LocationID: locationID, Status: status})
 		codes = append(codes, code)
 	}
-	_, err := p.Exec(ctx, `
+	_, err := p.Exec(context.Background(), `
 		INSERT INTO stock_balance (sku_id, location_id, on_hand) VALUES ($1, $2, $3)
 		ON CONFLICT (sku_id, location_id) DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand`,
 		skuID, locationID, n)
 	require.NoError(t, err)
 	return codes
+}
+
+// SerialSpec describes a serial to insert. Level defaults to UNIT and Status to IN_WAREHOUSE.
+type SerialSpec struct {
+	SKUID, LocationID int64
+	Status            string
+	Level             string
+	ParentID          *int64
+	PartnerID         *int64
+}
+
+// InsertSerial inserts one serial with a unique code and returns its id and code.
+// It does not touch stock_balance: use SetStockAs when the counter must match.
+func InsertSerial(t *testing.T, p *pgxpool.Pool, sp SerialSpec) (int64, string) {
+	t.Helper()
+	if sp.Status == "" {
+		sp.Status = "IN_WAREHOUSE"
+	}
+	if sp.Level == "" {
+		sp.Level = "UNIT"
+	}
+	ctx := context.Background()
+	var batchID int64
+	require.NoError(t, p.QueryRow(ctx, `
+		INSERT INTO production_batch (code, sku_id, produced_at, expires_on)
+		VALUES ('B-' || $1::bigint, $1::bigint, now(), current_date + 365)
+		ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
+		RETURNING id`, sp.SKUID).Scan(&batchID))
+
+	code := fmt.Sprintf("MG%011d", serialCounter.Add(1))
+	var id int64
+	require.NoError(t, p.QueryRow(ctx, `
+		INSERT INTO serial (code, level, sku_id, batch_id, status, location_id, parent_id, partner_id)
+		VALUES ($1, $2::serial_level, $3, $4, $5::serial_status, $6, $7, $8)
+		RETURNING id`, code, sp.Level, sp.SKUID, batchID, sp.Status, sp.LocationID, sp.ParentID, sp.PartnerID).Scan(&id))
+	return id, code
 }
 
 // Reserved returns the reserved counter of a SKU at a location.

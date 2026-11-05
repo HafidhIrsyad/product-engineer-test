@@ -44,3 +44,12 @@ UPDATE orders SET status = sqlc.arg(status), updated_at = now() WHERE id = sqlc.
 -- Pay and expiry race is decided by this WHERE clause: only one wins (§12.7).
 UPDATE orders SET status = 'PAID', updated_at = now()
 WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at > now();
+
+-- name: ListExpiredOrderIDs :many
+SELECT id FROM orders WHERE status = 'PENDING_PAYMENT' AND expires_at < now() ORDER BY id;
+
+-- name: ExpireOrder :one
+-- 0 rows (ErrNoRows) = the order was paid or cancelled since it was listed: skip it (§12.7).
+UPDATE orders SET status = 'EXPIRED', updated_at = now()
+WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at < now()
+RETURNING location_id;

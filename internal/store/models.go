@@ -11,7 +11,6 @@ import (
 
 	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type LocationType string
@@ -254,7 +253,7 @@ type Anomaly struct {
 	RefID      *string
 	Details    []byte
 	CreatedAt  time.Time
-	ResolvedAt pgtype.Timestamptz
+	ResolvedAt *time.Time
 }
 
 type Location struct {
@@ -330,7 +329,7 @@ type ProductionBatch struct {
 	Code       string
 	SkuID      int64
 	ProducedAt time.Time
-	ExpiresOn  pgtype.Date
+	ExpiresOn  time.Time
 }
 
 type ScanEvent struct {
@@ -355,7 +354,7 @@ type Serial struct {
 	LocationID      int64
 	PartnerID       *int64
 	OrderID         *int64
-	FirstVerifiedAt pgtype.Timestamptz
+	FirstVerifiedAt *time.Time
 	UpdatedAt       time.Time
 }
 

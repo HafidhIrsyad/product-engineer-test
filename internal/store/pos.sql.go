@@ -69,14 +69,15 @@ func (q *Queries) GetShortfall(ctx context.Context, arg GetShortfallParams) (int
 }
 
 const insertAnomaly = `-- name: InsertAnomaly :exec
-INSERT INTO anomaly (type, serial_id, location_id, ref_type, ref_id, details)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO anomaly (type, serial_id, location_id, partner_id, ref_type, ref_id, details)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertAnomalyParams struct {
 	Type       string
 	SerialID   *int64
 	LocationID *int64
+	PartnerID  *int64
 	RefType    *string
 	RefID      *string
 	Details    []byte
@@ -87,6 +88,7 @@ func (q *Queries) InsertAnomaly(ctx context.Context, arg InsertAnomalyParams) er
 		arg.Type,
 		arg.SerialID,
 		arg.LocationID,
+		arg.PartnerID,
 		arg.RefType,
 		arg.RefID,
 		arg.Details,

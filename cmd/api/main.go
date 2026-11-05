@@ -56,9 +56,12 @@ func run() error {
 	}
 	defer st.Close()
 
+	svc := app.NewService(st)
+	go svc.RunExpirySweeper(logger.WithContext(ctx), cfg.Sweeper.Interval) // single API instance (§12.7)
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTP.Port),
-		Handler:           api.NewRouter(app.NewService(st), logger, cfg.HTTP),
+		Handler:           api.NewRouter(svc, logger, cfg.HTTP),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      cfg.HTTP.RequestTimeout + 5*time.Second, // longer than the request timeout middleware
 	}

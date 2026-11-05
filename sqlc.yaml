@@ -14,6 +14,14 @@ sql:
             go_type: "github.com/google/uuid.UUID"
           - db_type: "timestamptz"
             go_type: "time.Time"
+          - db_type: "date"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
           # PostgreSQL enums map straight to domain types (no duplicate types).
           - db_type: "serial_status"
             go_type:

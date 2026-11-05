@@ -13,6 +13,20 @@ import (
 	"github.com/google/uuid"
 )
 
+const expireOrder = `-- name: ExpireOrder :one
+UPDATE orders SET status = 'EXPIRED', updated_at = now()
+WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at < now()
+RETURNING location_id
+`
+
+// 0 rows (ErrNoRows) = the order was paid or cancelled since it was listed: skip it (§12.7).
+func (q *Queries) ExpireOrder(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, expireOrder, id)
+	var location_id int64
+	err := row.Scan(&location_id)
+	return location_id, err
+}
+
 const getLocationByCode = `-- name: GetLocationByCode :one
 SELECT id, code, name, type, partner_id, lat, lng, online_sellable, online_buffer FROM location WHERE code = $1
 `
@@ -175,6 +189,30 @@ type InsertOrderItemParams struct {
 func (q *Queries) InsertOrderItem(ctx context.Context, arg InsertOrderItemParams) error {
 	_, err := q.db.Exec(ctx, insertOrderItem, arg.OrderID, arg.SkuID, arg.Qty)
 	return err
+}
+
+const listExpiredOrderIDs = `-- name: ListExpiredOrderIDs :many
+SELECT id FROM orders WHERE status = 'PENDING_PAYMENT' AND expires_at < now() ORDER BY id
+`
+
+func (q *Queries) ListExpiredOrderIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listExpiredOrderIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockOrder = `-- name: LockOrder :one
