@@ -164,7 +164,7 @@ Struktur memakai **semi clean architecture**: lapisan dipisah dengan aturan impo
 
 | Lapisan | Isi | Boleh import | Tidak boleh |
 |---|---|---|---|
-| `domain` | Tipe, status, aturan murni (transisi serial, aturan anomali, verdict, haversine, hash payload POS), semua sentinel error | stdlib saja | `app`, `store`, `api`, pgx, chi |
+| `domain` | Tipe, status, aturan murni (transisi serial, aturan anomali, verdict, haversine, hash payload POS), semua sentinel error | stdlib dan `google/uuid` (tipe nilai, tanpa I/O) | `app`, `store`, `api`, pgx, chi |
 | `app` | Use case per endpoint (= graf §16): membuka transaksi, mengatur alur, menghasilkan error domain. `app/stock.go` adalah **satu-satunya** penulis `stock_balance` (§11.3). | `domain`, `store` | `api`, chi, `net/http` |
 | `store` | Kode hasil sqlc, `InTx`, migrasi goose, terjemahan error pgx → error domain | `domain`, pgx, goose | `app`, `api` |
 | `api` | Router chi, handler, decode + validasi input (boundary), satu-satunya mapping error → HTTP | `app`, `domain`, `config` | `store`, pgx |
@@ -1201,7 +1201,7 @@ sequenceDiagram
 | Dua transaksi POS mengunci serial sama dengan urutan berbeda (deadlock) | Semua serial dikunci dalam satu query `ORDER BY id` | DB |
 | Retry dengan JSON yang urutan field-nya berbeda dianggap "isi berbeda" | `payload_hash` dari struct kanonik, bukan raw body (lihat di bawah) | Go |
 
-**Hash payload kanonik:** jangan hash raw body, karena urutan field dan spasi bisa berbeda saat retry. Decode JSON ke struct, urutkan item berdasarkan `line_no`, lalu `json.Marshal` struct itu dan hash hasilnya. `json.Marshal` pada struct Go selalu mengeluarkan field dengan urutan yang sama.
+**Hash payload kanonik:** jangan hash raw body, karena urutan field dan spasi bisa berbeda saat retry. Decode JSON ke struct, beri nomor item sesuai posisinya (`line_no` = urutan ke-1, 2, ...; urutan item ikut menjadi bagian payload), normalkan `occurred_at` ke UTC, lalu `json.Marshal` struct kanonik itu dan hash hasilnya. `json.Marshal` pada struct Go selalu mengeluarkan field dengan urutan yang sama.
 
 ```sql
 -- name: InsertPosTransaction :execrows

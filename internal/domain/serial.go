@@ -1,0 +1,76 @@
+package domain
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// SerialLevel is the packaging level of a serial: Pallet → Carton → Unit (§8.2).
+type SerialLevel string
+
+const (
+	LevelUnit   SerialLevel = "UNIT"
+	LevelCarton SerialLevel = "CARTON"
+	LevelPallet SerialLevel = "PALLET"
+)
+
+// SerialStatus is the lifecycle state of a serial (§9).
+type SerialStatus string
+
+const (
+	SerialProduced    SerialStatus = "PRODUCED"
+	SerialInWarehouse SerialStatus = "IN_WAREHOUSE"
+	SerialInTransit   SerialStatus = "IN_TRANSIT"
+	SerialInStock     SerialStatus = "IN_STOCK"
+	SerialSold        SerialStatus = "SOLD"
+	SerialVerified    SerialStatus = "VERIFIED"
+	SerialQuarantine  SerialStatus = "QUARANTINE"
+)
+
+// SerialStatuses lists every status, in lifecycle order.
+var SerialStatuses = []SerialStatus{
+	SerialProduced, SerialInWarehouse, SerialInTransit, SerialInStock,
+	SerialSold, SerialVerified, SerialQuarantine,
+}
+
+// allowed maps a status to the statuses it may move to (§9.2). Extra conditions, such as
+// the location type, are checked by the caller. The database guards against stale reads
+// with UPDATE ... WHERE status = $from (§9.3).
+var allowed = map[SerialStatus][]SerialStatus{
+	SerialProduced:    {SerialInWarehouse},
+	SerialInWarehouse: {SerialInTransit, SerialSold, SerialQuarantine},
+	SerialInTransit:   {SerialInStock},
+	SerialInStock:     {SerialInTransit, SerialSold, SerialVerified, SerialQuarantine},
+	SerialSold:        {SerialVerified},
+	SerialQuarantine:  {SerialInWarehouse, SerialInStock},
+	SerialVerified:    {}, // final
+}
+
+// CanTransition reports whether a serial may move from one status to another.
+func CanTransition(from, to SerialStatus) bool {
+	return slices.Contains(allowed[from], to)
+}
+
+// SerialCode is the random code printed in the QR: "MG" + 11 Crockford base32 characters (§8.1).
+type SerialCode string
+
+const (
+	serialCodeLen      = 13
+	serialCodePrefix   = "MG"
+	crockfordAlphabets = "0123456789ABCDEFGHJKMNPQRSTVWXYZ" // no I, L, O, U
+)
+
+// ParseSerialCode normalizes (trim, upper-case) and validates a scanned code.
+func ParseSerialCode(raw string) (SerialCode, error) {
+	code := strings.ToUpper(strings.TrimSpace(raw))
+	if len(code) != serialCodeLen || !strings.HasPrefix(code, serialCodePrefix) {
+		return "", fmt.Errorf("%w: serial code must be %d characters starting with %s", ErrInvalidInput, serialCodeLen, serialCodePrefix)
+	}
+	for _, r := range code[len(serialCodePrefix):] {
+		if !strings.ContainsRune(crockfordAlphabets, r) {
+			return "", fmt.Errorf("%w: serial code has an invalid character %q", ErrInvalidInput, r)
+		}
+	}
+	return SerialCode(code), nil
+}
