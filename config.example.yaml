@@ -5,7 +5,7 @@ http:
   port: 8080
   request_timeout: 10s
 database:
-  url: postgres://mgmi:mgmi@localhost:5432/mgmi?sslmode=disable
+  url: postgres://mgmi:mgmi@localhost:5433/mgmi?sslmode=disable
 log:
   level: debug          # debug so SQL query logs are visible
 sweeper:
