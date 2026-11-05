@@ -20,15 +20,21 @@ ORDER BY scanned_at DESC, id DESC
 LIMIT 1;
 
 -- name: CountOtherScanDevices :one
-SELECT COUNT(DISTINCT device_id)::int FROM scan_event
-WHERE serial_id = sqlc.arg(serial_id) AND device_id <> sqlc.arg(device_id);
+-- Devices that scanned this unit AFTER it was sold. Shelf scans before the sale are what careful
+-- shoppers do (PRODUCT_DEFENSE.md principle 1), so they never count towards a warning. A unit with
+-- no sale event (e.g. stock at a partner, whose sales we do not see) therefore never warns by count.
+SELECT COUNT(DISTINCT se.device_id)::int FROM scan_event se
+WHERE se.serial_id = sqlc.arg(serial_id) AND se.device_id <> sqlc.arg(device_id)
+  AND se.scanned_at >= COALESCE(
+      (SELECT MAX(e.created_at) FROM serial_event e WHERE e.serial_id = sqlc.arg(serial_id) AND e.to_status = 'SOLD'),
+      'infinity'::timestamptz);
 
 -- name: CountScans :one
 SELECT COUNT(*)::int FROM scan_event WHERE serial_id = $1;
 
 -- name: InsertScanEvent :exec
-INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict)
-VALUES (sqlc.arg(serial_id), sqlc.arg(raw_code), sqlc.arg(device_id), sqlc.arg(lat), sqlc.arg(lng), sqlc.arg(verdict));
+INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict, scanned_at)
+VALUES (sqlc.arg(serial_id), sqlc.arg(raw_code), sqlc.arg(device_id), sqlc.arg(lat), sqlc.arg(lng), sqlc.arg(verdict), sqlc.arg(scanned_at));
 
 -- name: LeakageByPallet :many
 -- Pallets whose scanned units turn up outside the distributor's region (ARCHITECTURE.md §8.4).

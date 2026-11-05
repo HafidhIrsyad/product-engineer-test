@@ -59,16 +59,20 @@ WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id);
 
 -- name: LockStoreOversell :exec
 -- Only one oversell resolution per store at a time (§13.5). Held until the transaction ends.
-SELECT pg_advisory_xact_lock(sqlc.arg(location_id)::bigint);
+-- Two-key form (class 1001, store id) so it cannot collide with another advisory lock user.
+SELECT pg_advisory_xact_lock(1001, sqlc.arg(location_id)::int);
 
 -- name: GetShortfall :one
--- Positive when more is reserved than physically available.
+-- Positive when more is reserved than physically available. FOR UPDATE: called after the order is
+-- locked (lock order orders, then stock_balance), so a cancel that committed meanwhile is seen.
 SELECT (reserved - (on_hand - quarantine))::int AS shortfall
 FROM stock_balance
-WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id);
+WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id)
+FOR UPDATE;
 
 -- name: PickOversellVictim :one
--- The newest open order of the store that holds this SKU (§13.5). Not locked here: SELECT ... LIMIT 1
+-- The order that loses its stock: an UNPAID order before a paid one, then the newest (§13.5).
+-- A customer who already paid is the last to lose. Not locked here: SELECT ... LIMIT 1
 -- FOR UPDATE returns no row when the candidate is cancelled while waiting for the lock, even if other
 -- candidates exist. The caller locks the order and re-checks its status instead.
 SELECT o.id
@@ -76,8 +80,17 @@ FROM orders o
 JOIN order_item oi ON oi.order_id = o.id AND oi.sku_id = sqlc.arg(sku_id)
 WHERE o.location_id = sqlc.arg(location_id)
   AND o.status IN ('PENDING_PAYMENT', 'PAID')
-ORDER BY o.created_at DESC, o.id DESC
+ORDER BY (o.status = 'PAID'), o.created_at DESC, o.id DESC
 LIMIT 1;
 
 -- name: GetSerialStatus :one
 SELECT status FROM serial WHERE id = $1;
+
+-- name: ListOversold :many
+-- Store stock where more is reserved than physically there: left over if a sync failed after its
+-- sale was recorded and the device never resent it (§13.5). Re-checked under locks before acting.
+SELECT sb.location_id, sb.sku_id
+FROM stock_balance sb
+JOIN location l ON l.id = sb.location_id
+WHERE l.type = 'OWN_STORE' AND sb.reserved > sb.on_hand - sb.quarantine
+ORDER BY sb.location_id, sb.sku_id;

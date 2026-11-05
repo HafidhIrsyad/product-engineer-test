@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,12 @@ func (s *Service) Heartbeat(ctx context.Context, storeCode, deviceID string) err
 	if err != nil {
 		return err
 	}
-	n, err := s.store.TouchHeartbeat(ctx, store.TouchHeartbeatParams{DeviceID: deviceID, StoreID: loc.ID})
+	return s.touchDevice(ctx, loc.ID, deviceID)
+}
+
+// touchDevice records a fresh heartbeat. 0 rows means the device is registered at another store.
+func (s *Service) touchDevice(ctx context.Context, storeID int64, deviceID string) error {
+	n, err := s.store.TouchHeartbeat(ctx, store.TouchHeartbeatParams{DeviceID: deviceID, StoreID: storeID})
 	if err != nil {
 		return err
 	}
@@ -66,8 +72,13 @@ func (s *Service) SyncPOS(ctx context.Context, in SyncPOSInput) ([]PosResult, er
 	if err != nil {
 		return nil, err
 	}
+	// A sync proves the device is online, and ties it to this store: a device belongs to one store,
+	// and one that never sent a heartbeat is still counted when deciding if the store is online (§13.6).
+	if err := s.touchDevice(ctx, loc.ID, in.DeviceID); err != nil {
+		return nil, err
+	}
 	txns := slices.Clone(in.Transactions)
-	slices.SortStableFunc(txns, func(a, b domain.PosTxn) int { return int(a.LocalSeq - b.LocalSeq) })
+	slices.SortStableFunc(txns, func(a, b domain.PosTxn) int { return cmp.Compare(a.LocalSeq, b.LocalSeq) })
 
 	results := make([]PosResult, 0, len(txns))
 	touched := map[int64]bool{}
@@ -237,7 +248,7 @@ func recordSale(ctx context.Context, q *store.Queries, loc store.Location, t dom
 	for skuID, qty := range sold {
 		lines = append(lines, stockLine{skuID: skuID, qty: qty})
 	}
-	slices.SortFunc(lines, func(a, b stockLine) int { return int(a.skuID - b.skuID) })
+	slices.SortFunc(lines, func(a, b stockLine) int { return cmp.Compare(a.skuID, b.skuID) })
 	if err := sellPOS(ctx, q, t.ID, loc.ID, lines); err != nil {
 		return PosResult{}, err
 	}
@@ -272,19 +283,12 @@ func (s *Service) resolveOversell(ctx context.Context, storeID, skuID int64) err
 	for {
 		more := false
 		err := s.store.InTx(ctx, func(q *store.Queries) error {
-			if err := q.LockStoreOversell(ctx, storeID); err != nil {
-				return err
-			}
-			shortfall, err := q.GetShortfall(ctx, store.GetShortfallParams{SkuID: skuID, LocationID: storeID})
-			if store.IsNotFound(err) || (err == nil && shortfall <= 0) {
-				return nil // nothing to resolve
-			}
-			if err != nil {
+			if err := q.LockStoreOversell(ctx, int32(storeID)); err != nil {
 				return err
 			}
 			orderID, err := q.PickOversellVictim(ctx, store.PickOversellVictimParams{SkuID: skuID, LocationID: storeID})
 			if store.IsNotFound(err) {
-				return nil // reserved by no open order: nothing more to take back
+				return nil // no open order holds this SKU: nothing to take back
 			}
 			if err != nil {
 				return err
@@ -296,6 +300,16 @@ func (s *Service) resolveOversell(ctx context.Context, storeID, skuID int64) err
 			}
 			if o.Status != domain.OrderPendingPayment && o.Status != domain.OrderPaid {
 				return nil // cancelled or expired while we waited: pick again
+			}
+			// Only now, with the order locked, read the shortage and lock the stock row. A cancel
+			// that committed before this point is seen, so an order is never sacrificed for nothing.
+			shortfall, err := q.GetShortfall(ctx, store.GetShortfallParams{SkuID: skuID, LocationID: storeID})
+			if store.IsNotFound(err) || (err == nil && shortfall <= 0) {
+				more = false // nothing to resolve
+				return nil
+			}
+			if err != nil {
+				return err
 			}
 			return loseReservation(ctx, q, orderID, storeID, skuID, shortfall)
 		})
@@ -332,4 +346,21 @@ func loseReservation(ctx context.Context, q *store.Queries, orderID, storeID, sk
 	return q.InsertAnomaly(ctx, store.InsertAnomalyParams{
 		Type: string(domain.AnomalyOverSold), LocationID: &storeID, RefType: &refType, RefID: &ref, Details: details,
 	})
+}
+
+// ResolveOversold finds store stock that is still over-reserved and resolves it (§13.5). Normally
+// Tx2 does this right after a sync; this catches the case where a sync failed after Tx1 and the
+// device never resent it. The sweeper calls it every round.
+func (s *Service) ResolveOversold(ctx context.Context) error {
+	rows, err := s.store.ListOversold(ctx)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, r := range rows {
+		if err := s.resolveOversell(ctx, r.LocationID, r.SkuID); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("resolve oversell at location %d, sku %d: %w", r.LocationID, r.SkuID, err)
+		}
+	}
+	return firstErr
 }

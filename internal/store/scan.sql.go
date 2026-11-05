@@ -13,8 +13,11 @@ import (
 )
 
 const countOtherScanDevices = `-- name: CountOtherScanDevices :one
-SELECT COUNT(DISTINCT device_id)::int FROM scan_event
-WHERE serial_id = $1 AND device_id <> $2
+SELECT COUNT(DISTINCT se.device_id)::int FROM scan_event se
+WHERE se.serial_id = $1 AND se.device_id <> $2
+  AND se.scanned_at >= COALESCE(
+      (SELECT MAX(e.created_at) FROM serial_event e WHERE e.serial_id = $1 AND e.to_status = 'SOLD'),
+      'infinity'::timestamptz)
 `
 
 type CountOtherScanDevicesParams struct {
@@ -22,6 +25,9 @@ type CountOtherScanDevicesParams struct {
 	DeviceID string
 }
 
+// Devices that scanned this unit AFTER it was sold. Shelf scans before the sale are what careful
+// shoppers do (PRODUCT_DEFENSE.md principle 1), so they never count towards a warning. A unit with
+// no sale event (e.g. stock at a partner, whose sales we do not see) therefore never warns by count.
 func (q *Queries) CountOtherScanDevices(ctx context.Context, arg CountOtherScanDevicesParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countOtherScanDevices, arg.SerialID, arg.DeviceID)
 	var column_1 int32
@@ -117,17 +123,18 @@ func (q *Queries) GetSerialForVerify(ctx context.Context, code string) (GetSeria
 }
 
 const insertScanEvent = `-- name: InsertScanEvent :exec
-INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict, scanned_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertScanEventParams struct {
-	SerialID *int64
-	RawCode  string
-	DeviceID string
-	Lat      *float64
-	Lng      *float64
-	Verdict  string
+	SerialID  *int64
+	RawCode   string
+	DeviceID  string
+	Lat       *float64
+	Lng       *float64
+	Verdict   string
+	ScannedAt time.Time
 }
 
 func (q *Queries) InsertScanEvent(ctx context.Context, arg InsertScanEventParams) error {
@@ -138,6 +145,7 @@ func (q *Queries) InsertScanEvent(ctx context.Context, arg InsertScanEventParams
 		arg.Lat,
 		arg.Lng,
 		arg.Verdict,
+		arg.ScannedAt,
 	)
 	return err
 }

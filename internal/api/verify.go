@@ -9,7 +9,7 @@ import (
 )
 
 func (h *handler) verify(w http.ResponseWriter, r *http.Request) {
-	in, err := decodeVerify(r)
+	in, err := decodeVerify(w, r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -23,9 +23,9 @@ func (h *handler) verify(w http.ResponseWriter, r *http.Request) {
 }
 
 // decodeVerify is the trust boundary: raw request → validated input (ARCHITECTURE.md §16.2).
-func decodeVerify(r *http.Request) (app.VerifyInput, error) {
+func decodeVerify(w http.ResponseWriter, r *http.Request) (app.VerifyInput, error) {
 	var in app.VerifyInput
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeBody(w, r, &in); err != nil {
 		return in, err
 	}
 	code, err := domain.ParseSerialCode(string(in.Code))
@@ -33,8 +33,8 @@ func decodeVerify(r *http.Request) (app.VerifyInput, error) {
 		return in, err
 	}
 	in.Code = code
-	if in.DeviceID == "" {
-		return in, fmt.Errorf("%w: device_id is required", domain.ErrInvalidInput)
+	if in.DeviceID == "" || len(in.DeviceID) > maxDeviceIDLen {
+		return in, fmt.Errorf("%w: device_id is required (at most %d characters)", domain.ErrInvalidInput, maxDeviceIDLen)
 	}
 	if (in.Lat == nil) != (in.Lng == nil) {
 		return in, fmt.Errorf("%w: lat and lng must be given together", domain.ErrInvalidInput)

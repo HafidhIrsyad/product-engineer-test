@@ -47,18 +47,19 @@ const (
 // stock and never changes the status of a unit in a shelf: only the first scan after the sale
 // moves SOLD to VERIFIED.
 func (s *Service) Verify(ctx context.Context, in VerifyInput) (VerifyView, error) {
+	at := time.Now() // one clock for every scan time, stored and compared, so rule R1 never mixes two clocks
 	var view VerifyView
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
 		row, err := q.GetSerialForVerify(ctx, string(in.Code))
 		if store.IsNotFound(err) {
 			view = VerifyView{Verdict: domain.VerdictNotFound, Message: messageNotFound}
-			return insertScan(ctx, q, nil, in, view.Verdict) // R0: only logged in scan_event
+			return insertScan(ctx, q, nil, in, view.Verdict, at) // R0: only logged in scan_event
 		}
 		if err != nil {
 			return err
 		}
 
-		scanInput, err := scanContext(ctx, q, row, in)
+		scanInput, err := scanContext(ctx, q, row, in, at)
 		if err != nil {
 			return err
 		}
@@ -88,15 +89,15 @@ func (s *Service) Verify(ctx context.Context, in VerifyInput) (VerifyView, error
 		if result.Verdict == domain.VerdictGenuineWithWarning {
 			view.Message = messageWarning
 		}
-		return insertScan(ctx, q, &row.ID, in, result.Verdict)
+		return insertScan(ctx, q, &row.ID, in, result.Verdict, at)
 	})
 	return view, err
 }
 
 // scanContext gathers what the pure rules need: the previous scan from another device,
 // how many devices scanned this code, and the distributor's region.
-func scanContext(ctx context.Context, q *store.Queries, row store.GetSerialForVerifyRow, in VerifyInput) (verifyScan, error) {
-	out := verifyScan{ScanInput: domain.ScanInput{Status: row.Status, At: time.Now()}}
+func scanContext(ctx context.Context, q *store.Queries, row store.GetSerialForVerifyRow, in VerifyInput, at time.Time) (verifyScan, error) {
+	out := verifyScan{ScanInput: domain.ScanInput{Status: row.Status, At: at}}
 	if in.Lat != nil && in.Lng != nil {
 		out.Location = &domain.Point{Lat: *in.Lat, Lng: *in.Lng}
 	}
@@ -132,9 +133,9 @@ type verifyScan struct {
 	PriorScans int32
 }
 
-func insertScan(ctx context.Context, q *store.Queries, serialID *int64, in VerifyInput, v domain.Verdict) error {
+func insertScan(ctx context.Context, q *store.Queries, serialID *int64, in VerifyInput, v domain.Verdict, at time.Time) error {
 	return q.InsertScanEvent(ctx, store.InsertScanEventParams{
-		SerialID: serialID, RawCode: string(in.Code), DeviceID: in.DeviceID, Lat: in.Lat, Lng: in.Lng, Verdict: string(v),
+		SerialID: serialID, RawCode: string(in.Code), DeviceID: in.DeviceID, Lat: in.Lat, Lng: in.Lng, Verdict: string(v), ScannedAt: at,
 	})
 }
 

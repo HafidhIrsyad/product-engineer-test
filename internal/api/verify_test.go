@@ -35,7 +35,9 @@ func (s server) scalar(t *testing.T, query string, args ...any) string {
 func TestIntegration_VerifyHTTP(t *testing.T) {
 	s := newServer(t, 1) // warehouse WH-JKT (id 1) and SKU MGN-PROT-500 (id 1)
 	sold := func() string {
-		_, code := testdb.InsertSerial(t, s.pool, testdb.SerialSpec{SKUID: 1, LocationID: 1, Status: "SOLD"})
+		id, code := testdb.InsertSerial(t, s.pool, testdb.SerialSpec{SKUID: 1, LocationID: 1, Status: "SOLD"})
+		_, err := s.pool.Exec(context.Background(), `INSERT INTO serial_event (serial_id, from_status, to_status, ref_type) VALUES ($1, 'IN_STOCK', 'SOLD', 'TEST')`, id)
+		require.NoError(t, err)
 		return code
 	}
 
@@ -57,6 +59,21 @@ func TestIntegration_VerifyHTTP(t *testing.T) {
 		_, body = s.post(t, "/v1/verify", "", verifyBody(code, "d3", jakartaCoords))
 		assert.Equal(t, "GENUINE_WITH_WARNING", body["verdict"], "three different devices")
 		assert.NotEmpty(t, body["message"])
+	})
+
+	t.Run("shelf scans before the sale never count towards a warning", func(t *testing.T) {
+		id, code := testdb.InsertSerial(t, s.pool, testdb.SerialSpec{SKUID: 1, LocationID: 1, Status: "IN_STOCK"})
+		for _, d := range []string{"shopper-1", "shopper-2", "shopper-3", "shopper-4"} {
+			_, body := s.post(t, "/v1/verify", "", verifyBody(code, d, jakartaCoords))
+			assert.Equal(t, "GENUINE", body["verdict"], "checking the shelf is what we want shoppers to do")
+		}
+		_, err := s.pool.Exec(context.Background(), `UPDATE serial SET status = 'SOLD' WHERE id = $1`, id)
+		require.NoError(t, err)
+		_, err = s.pool.Exec(context.Background(), `INSERT INTO serial_event (serial_id, from_status, to_status, ref_type) VALUES ($1, 'IN_STOCK', 'SOLD', 'TEST')`, id)
+		require.NoError(t, err)
+
+		_, body := s.post(t, "/v1/verify", "", verifyBody(code, "buyer", jakartaCoords))
+		assert.Equal(t, "GENUINE", body["verdict"], "the real buyer is not warned because shoppers looked before")
 	})
 
 	t.Run("the same device scanning again is not suspicious", func(t *testing.T) {

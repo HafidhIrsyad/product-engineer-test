@@ -1,6 +1,6 @@
 -- name: ReserveStock :execrows
 -- Atomic: check availability and add to reserved in ONE statement (ARCHITECTURE.md §12.3).
--- Store stock is only for D2C, and only when every active POS device is online.
+-- Store stock is only for D2C, and only when the store has active POS devices and all are online.
 -- 0 rows = not enough stock (or location not sellable).
 UPDATE stock_balance sb
 SET reserved   = sb.reserved + sqlc.arg(qty)::int,
@@ -12,6 +12,10 @@ WHERE l.id = sb.location_id
   AND l.online_sellable
   AND (l.type <> 'OWN_STORE' OR (
         sqlc.arg(channel)::text = 'D2C'
+        -- A store is online only if it has at least one active device and none of them is stale.
+        -- A store with no device at all is NOT online: nothing proves its cashiers are connected.
+        AND EXISTS (
+            SELECT 1 FROM pos_device d WHERE d.store_id = l.id AND d.active)
         AND NOT EXISTS (
             SELECT 1 FROM pos_device d
             WHERE d.store_id = l.id AND d.active
@@ -19,7 +23,8 @@ WHERE l.id = sb.location_id
   AND sb.on_hand - sb.reserved - sb.quarantine - l.online_buffer >= sqlc.arg(qty)::int;
 
 -- name: ReleaseStock :execrows
--- The CHECK (reserved >= 0) constraint turns a double release into an error instead of bad data.
+-- Releasing twice is prevented by the callers (the order row lock, or a conditional status UPDATE),
+-- not by this statement. CHECK (reserved >= 0) only catches it when no other order holds stock here.
 UPDATE stock_balance
 SET reserved   = reserved - sqlc.arg(qty)::int,
     updated_at = now()

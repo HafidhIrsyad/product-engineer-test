@@ -39,6 +39,8 @@ func newStore(t *testing.T, n, buffer int) posFixture {
 	f.storeID = testdb.InsertStore(t, pool, storeCode, buffer)
 	f.skuID = testdb.InsertSKU(t, pool, skuCode)
 	f.serials = testdb.SetStockAs(t, pool, f.skuID, f.storeID, n, "IN_STOCK")
+	// A store is sold online only once it has an online device (§13.6).
+	require.NoError(t, f.svc.Heartbeat(context.Background(), storeCode, "pos-bdg-01-a"))
 	return f
 }
 
@@ -355,6 +357,109 @@ func TestIntegration_Heartbeat_DeviceBelongsToOneStore(t *testing.T) {
 	assert.ErrorIs(t, f.svc.Heartbeat(ctx, "STORE-SBY-01", "pos-a"), domain.ErrDeviceStoreMismatch)
 }
 
+func (f posFixture) order(t *testing.T) app.OrderView {
+	t.Helper()
+	o, _, err := f.svc.CreateOrder(context.Background(), app.CreateOrderInput{
+		IdempotencyKey: uuid.New(), Channel: domain.ChannelD2C, LocationCode: storeCode,
+		Items: []app.OrderItem{{SKUCode: skuCode, Qty: 1}},
+	})
+	require.NoError(t, err)
+	return o
+}
+
+func (f posFixture) status(t *testing.T, orderID int64) string {
+	t.Helper()
+	var s string
+	require.NoError(t, f.pool.QueryRow(context.Background(), `SELECT status FROM orders WHERE id = $1`, orderID).Scan(&s))
+	return s
+}
+
+// A cancel that commits before the shortage is checked means there is no shortage: nobody loses stock.
+func TestIntegration_PosSync_NoShortageNoSacrifice(t *testing.T) {
+	f := newStore(t, 3, 0)
+	a, b := f.order(t), f.order(t)
+
+	_, err := f.svc.SyncPOS(context.Background(), syncOf(sale(f.serials[0])))
+	require.NoError(t, err) // 2 units left, 2 reserved: exactly enough
+
+	assert.Equal(t, "PENDING_PAYMENT", f.status(t, a.ID))
+	assert.Equal(t, "PENDING_PAYMENT", f.status(t, b.ID))
+	assert.Equal(t, 0, f.count(t, `SELECT COUNT(*) FROM anomaly WHERE type = 'OVERSOLD'`))
+	testdb.AssertInvariants(t, f.pool)
+}
+
+// Two syncs that each see the same shortage must not sacrifice twice for it (the advisory lock).
+func TestIntegration_PosSync_ConcurrentSyncsSameShortage(t *testing.T) {
+	f := newStore(t, 3, 0)
+	for range 3 {
+		f.order(t)
+	}
+
+	runTogether(2, func(i int) {
+		_, err := f.svc.SyncPOS(context.Background(), syncOf(sale(f.serials[i])))
+		assert.NoError(t, err)
+	})
+
+	// 3 units, 3 reserved, 2 sold: 1 unit left, so exactly 2 orders had to lose their stock.
+	assert.Equal(t, 2, f.count(t, `SELECT COUNT(*) FROM orders WHERE status = 'NEEDS_REALLOCATION'`))
+	assert.Equal(t, 1, testdb.Reserved(t, f.pool, f.skuID, f.storeID))
+	testdb.AssertInvariants(t, f.pool)
+}
+
+// A customer who already paid is the last to lose: an unpaid order goes first, even if it is older.
+func TestIntegration_PosSync_UnpaidLosesBeforePaid(t *testing.T) {
+	f := newStore(t, 2, 0)
+	unpaid, paid := f.order(t), f.order(t)
+	_, err := f.svc.PayOrder(context.Background(), paid.ID) // the newer order is the paid one
+	require.NoError(t, err)
+
+	_, err = f.svc.SyncPOS(context.Background(), syncOf(sale(f.serials[0])))
+	require.NoError(t, err)
+
+	assert.Equal(t, "NEEDS_REALLOCATION", f.status(t, unpaid.ID))
+	assert.Equal(t, "PAID", f.status(t, paid.ID))
+}
+
+// If a sync failed after its sale was recorded and the device never resent it, the sweeper's
+// ResolveOversold still brings reservations back in line with the physical stock.
+func TestIntegration_ResolveOversold(t *testing.T) {
+	f := newStore(t, 2, 0)
+	f.order(t)
+	f.order(t)
+	// Simulate the failure: the sale reduced on_hand, but Tx2 never ran.
+	_, err := f.pool.Exec(context.Background(), `UPDATE stock_balance SET on_hand = 1 WHERE sku_id = $1 AND location_id = $2`, f.skuID, f.storeID)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(context.Background(), `UPDATE serial SET status = 'SOLD' WHERE id = (SELECT MIN(id) FROM serial WHERE location_id = $1)`, f.storeID)
+	require.NoError(t, err)
+
+	require.NoError(t, f.svc.ResolveOversold(context.Background()))
+
+	assert.Equal(t, 1, f.count(t, `SELECT COUNT(*) FROM orders WHERE status = 'NEEDS_REALLOCATION'`))
+	assert.Equal(t, 1, testdb.Reserved(t, f.pool, f.skuID, f.storeID))
+	testdb.AssertInvariants(t, f.pool)
+	require.NoError(t, f.svc.ResolveOversold(context.Background()), "running it again changes nothing")
+}
+
+// A sync registers its device, so a till that never sent a heartbeat still counts, and a device
+// cannot push sales into a store it does not belong to.
+func TestIntegration_PosSync_TiesDeviceToStore(t *testing.T) {
+	f := newStore(t, 3, 0)
+	testdb.InsertStore(t, f.pool, "STORE-SBY-01", 0)
+	ctx := context.Background()
+
+	in := syncOf(sale(f.serials[0]))
+	in.DeviceID = "pos-never-heartbeat"
+	_, err := f.svc.SyncPOS(ctx, in)
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.count(t, `SELECT COUNT(*) FROM pos_device WHERE id = 'pos-never-heartbeat' AND store_id = $1`, f.storeID))
+
+	other := syncOf(sale(f.serials[1]))
+	other.StoreCode = "STORE-SBY-01"
+	other.DeviceID = "pos-never-heartbeat"
+	_, err = f.svc.SyncPOS(ctx, other)
+	assert.ErrorIs(t, err, domain.ErrDeviceStoreMismatch)
+}
+
 // T22: store stock is sold online only to D2C, and only while every active POS device is online.
 func TestIntegration_StoreStockRules(t *testing.T) {
 	f := newStore(t, 5, 0)
@@ -366,6 +471,10 @@ func TestIntegration_StoreStockRules(t *testing.T) {
 		})
 		return err
 	}
+
+	_, err0 := f.pool.Exec(ctx, `DELETE FROM pos_device`)
+	require.NoError(t, err0)
+	assert.ErrorIs(t, order(domain.ChannelD2C), domain.ErrInsufficientStock, "a store with no device is not online")
 
 	require.NoError(t, f.svc.Heartbeat(ctx, storeCode, "pos-a"))
 	require.NoError(t, f.svc.Heartbeat(ctx, storeCode, "pos-b"))

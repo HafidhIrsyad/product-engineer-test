@@ -64,6 +64,7 @@ const getShortfall = `-- name: GetShortfall :one
 SELECT (reserved - (on_hand - quarantine))::int AS shortfall
 FROM stock_balance
 WHERE sku_id = $1 AND location_id = $2
+FOR UPDATE
 `
 
 type GetShortfallParams struct {
@@ -71,7 +72,8 @@ type GetShortfallParams struct {
 	LocationID int64
 }
 
-// Positive when more is reserved than physically available.
+// Positive when more is reserved than physically available. FOR UPDATE: called after the order is
+// locked (lock order orders, then stock_balance), so a cancel that committed meanwhile is seen.
 func (q *Queries) GetShortfall(ctx context.Context, arg GetShortfallParams) (int32, error) {
 	row := q.db.QueryRow(ctx, getShortfall, arg.SkuID, arg.LocationID)
 	var shortfall int32
@@ -201,6 +203,41 @@ func (q *Queries) InsertSerialEvent(ctx context.Context, arg InsertSerialEventPa
 	return err
 }
 
+const listOversold = `-- name: ListOversold :many
+SELECT sb.location_id, sb.sku_id
+FROM stock_balance sb
+JOIN location l ON l.id = sb.location_id
+WHERE l.type = 'OWN_STORE' AND sb.reserved > sb.on_hand - sb.quarantine
+ORDER BY sb.location_id, sb.sku_id
+`
+
+type ListOversoldRow struct {
+	LocationID int64
+	SkuID      int64
+}
+
+// Store stock where more is reserved than physically there: left over if a sync failed after its
+// sale was recorded and the device never resent it (§13.5). Re-checked under locks before acting.
+func (q *Queries) ListOversold(ctx context.Context) ([]ListOversoldRow, error) {
+	rows, err := q.db.Query(ctx, listOversold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOversoldRow
+	for rows.Next() {
+		var i ListOversoldRow
+		if err := rows.Scan(&i.LocationID, &i.SkuID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockSerialsByCodes = `-- name: LockSerialsByCodes :many
 SELECT id, code, level, sku_id, location_id, status
 FROM serial
@@ -247,11 +284,12 @@ func (q *Queries) LockSerialsByCodes(ctx context.Context, codes []string) ([]Loc
 }
 
 const lockStoreOversell = `-- name: LockStoreOversell :exec
-SELECT pg_advisory_xact_lock($1::bigint)
+SELECT pg_advisory_xact_lock(1001, $1::int)
 `
 
 // Only one oversell resolution per store at a time (§13.5). Held until the transaction ends.
-func (q *Queries) LockStoreOversell(ctx context.Context, locationID int64) error {
+// Two-key form (class 1001, store id) so it cannot collide with another advisory lock user.
+func (q *Queries) LockStoreOversell(ctx context.Context, locationID int32) error {
 	_, err := q.db.Exec(ctx, lockStoreOversell, locationID)
 	return err
 }
@@ -262,7 +300,7 @@ FROM orders o
 JOIN order_item oi ON oi.order_id = o.id AND oi.sku_id = $1
 WHERE o.location_id = $2
   AND o.status IN ('PENDING_PAYMENT', 'PAID')
-ORDER BY o.created_at DESC, o.id DESC
+ORDER BY (o.status = 'PAID'), o.created_at DESC, o.id DESC
 LIMIT 1
 `
 
@@ -271,7 +309,8 @@ type PickOversellVictimParams struct {
 	LocationID int64
 }
 
-// The newest open order of the store that holds this SKU (§13.5). Not locked here: SELECT ... LIMIT 1
+// The order that loses its stock: an UNPAID order before a paid one, then the newest (§13.5).
+// A customer who already paid is the last to lose. Not locked here: SELECT ... LIMIT 1
 // FOR UPDATE returns no row when the candidate is cancelled while waiting for the lock, even if other
 // candidates exist. The caller locks the order and re-checks its status instead.
 func (q *Queries) PickOversellVictim(ctx context.Context, arg PickOversellVictimParams) (int64, error) {

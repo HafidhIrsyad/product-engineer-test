@@ -3,6 +3,7 @@ package api_test
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -76,6 +77,19 @@ func TestIntegration_PosHTTP(t *testing.T) {
 			status, _ := s.post(t, "/v1/pos/sync", "", body)
 			assert.Equal(t, http.StatusUnprocessableEntity, status, name)
 		}
+	})
+
+	t.Run("input limits and strict bodies are 422", func(t *testing.T) {
+		huge := `{"store_code":"STORE-BDG-01","device_id":"` + strings.Repeat("x", 2<<20) + `","transactions":[{}]}`
+		status, _ := s.post(t, "/v1/pos/sync", "", huge)
+		assert.Equal(t, http.StatusUnprocessableEntity, status, "a body over 1 MiB is refused")
+
+		many := strings.Repeat(`{},`, 600)
+		status, _ = s.post(t, "/v1/pos/sync", "", `{"store_code":"STORE-BDG-01","device_id":"pos-a","transactions":[`+many+`{}]}`)
+		assert.Equal(t, http.StatusUnprocessableEntity, status, "more than 500 transactions per sync")
+
+		status, _ = s.post(t, "/v1/pos/heartbeat", "", `{"store_code":"STORE-BDG-01","device_id":"pos-a"}{"x":1}`)
+		assert.Equal(t, http.StatusUnprocessableEntity, status, "trailing data after the JSON object")
 	})
 
 	t.Run("an unknown store is 404", func(t *testing.T) {

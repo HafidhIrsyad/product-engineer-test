@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/HafidhIrsyad/product-engineer-test/internal/app"
@@ -13,7 +12,7 @@ import (
 )
 
 func (h *handler) createOrder(w http.ResponseWriter, r *http.Request) {
-	in, err := decodeCreateOrder(r)
+	in, err := decodeCreateOrder(w, r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -73,7 +72,7 @@ func (h *handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 // decodeCreateOrder is the trust boundary: raw request → validated app input (ARCHITECTURE.md §16.1).
-func decodeCreateOrder(r *http.Request) (app.CreateOrderInput, error) {
+func decodeCreateOrder(w http.ResponseWriter, r *http.Request) (app.CreateOrderInput, error) {
 	var in app.CreateOrderInput
 
 	key, err := uuid.Parse(r.Header.Get("Idempotency-Key"))
@@ -82,7 +81,7 @@ func decodeCreateOrder(r *http.Request) (app.CreateOrderInput, error) {
 	}
 	in.IdempotencyKey = key
 
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeBody(w, r, &in); err != nil {
 		return in, err
 	}
 
@@ -92,8 +91,8 @@ func decodeCreateOrder(r *http.Request) (app.CreateOrderInput, error) {
 	if in.LocationCode == "" {
 		return in, fmt.Errorf("%w: location_code is required", domain.ErrInvalidInput)
 	}
-	if len(in.Items) == 0 {
-		return in, fmt.Errorf("%w: items must not be empty", domain.ErrInvalidInput)
+	if len(in.Items) == 0 || len(in.Items) > maxOrderItems {
+		return in, fmt.Errorf("%w: items must have between 1 and %d entries", domain.ErrInvalidInput, maxOrderItems)
 	}
 	seen := make(map[string]bool, len(in.Items))
 	for _, it := range in.Items {
@@ -111,7 +110,7 @@ func decodeCreateOrder(r *http.Request) (app.CreateOrderInput, error) {
 }
 
 func orderID(r *http.Request) (int64, error) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		return 0, fmt.Errorf("%w: order id must be a positive integer", domain.ErrInvalidInput)
 	}

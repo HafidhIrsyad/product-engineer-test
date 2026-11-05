@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -18,16 +19,21 @@ func (s *Service) ExpireDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	expired := 0
+	var firstErr error
 	for _, id := range ids {
 		done, err := s.expireOne(ctx, id)
 		if err != nil {
-			return expired, err
+			// One failing order must not keep every later order's stock reserved.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("expire order %d: %w", id, err)
+			}
+			continue
 		}
 		if done {
 			expired++
 		}
 	}
-	return expired, nil
+	return expired, firstErr
 }
 
 func (s *Service) expireOne(ctx context.Context, id int64) (bool, error) {
@@ -54,7 +60,7 @@ func (s *Service) expireOne(ctx context.Context, id int64) (bool, error) {
 	return done && err == nil, err
 }
 
-// RunExpirySweeper runs ExpireDue every interval until ctx ends. Run it in one goroutine of a
+// RunExpirySweeper runs ExpireDue, then ResolveOversold, every interval until ctx ends. Run it in one goroutine of a
 // single API instance. A failed round is logged and the next one runs normally; correctness does
 // not depend on the sweeper, because PayOrder itself refuses an order past expires_at.
 func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) {
@@ -72,6 +78,9 @@ func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) 
 			}
 			if n > 0 {
 				log.Info().Int("orders", n).Msg("expired unpaid orders")
+			}
+			if err := s.ResolveOversold(ctx); err != nil && ctx.Err() == nil {
+				log.Error().Err(err).Msg("oversell sweep failed")
 			}
 		}
 	}

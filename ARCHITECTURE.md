@@ -167,7 +167,7 @@ Struktur memakai **semi clean architecture**: lapisan dipisah dengan aturan impo
 | `domain` | Tipe, status, aturan murni (transisi serial, aturan anomali, verdict, haversine, hash payload POS), semua sentinel error | stdlib dan `google/uuid` (tipe nilai, tanpa I/O) | `app`, `store`, `api`, pgx, chi |
 | `app` | Use case per endpoint (= graf §16): membuka transaksi, mengatur alur, menghasilkan error domain. `app/stock.go` adalah **satu-satunya** penulis `stock_balance` (§11.3). | `domain`, `store` | `api`, chi, `net/http` |
 | `store` | Kode hasil sqlc, `InTx`, migrasi goose, terjemahan error pgx → error domain | `domain`, pgx, goose | `app`, `api` |
-| `api` | Router chi, handler, decode + validasi input (boundary), satu-satunya mapping error → HTTP | `app`, `domain`, `config` | `store`, pgx |
+| `api` | Router chi, handler, decode + validasi input (boundary), satu-satunya mapping error → HTTP | `app`, `domain`, `config`, `logging` | `store`, pgx |
 | `config`, `logging` | Infrastruktur lintas lapisan (§5.2–5.3) | library masing-masing | — |
 | `cmd/api` | Composition root: merangkai semua lapisan | semua | — |
 
@@ -504,8 +504,8 @@ CREATE TABLE pos_transaction (
 ### 8.2 Hierarki agregasi
 
 ```
-PALLET  MGPALxxxxx
- ├── CARTON  MGCTNxxxxx
+PALLET  MGxxxxxxxxxxx      (13 karakter, sama dengan unit; tingkatnya ada di kolom `level`)
+ ├── CARTON  MGxxxxxxxxxxx
  │    ├── UNIT  MGxxxxxxxxxxx
  │    ├── UNIT  ...
  │    └── ... (units_per_carton)
@@ -686,12 +686,14 @@ func CanTransition(from, to Status) bool {
 **Di DB** — guard terhadap race (dua proses mengubah serial yang sama bersamaan):
 
 ```sql
--- name: TransitionSerial :execrows
+-- name: TransitionSerial :one
 UPDATE serial
-SET status = sqlc.arg(to_status), updated_at = now()
-WHERE id = sqlc.arg(id)
-  AND status = sqlc.arg(from_status);
--- RowsAffected == 0 → status sudah diubah proses lain → kembalikan ErrStaleStatus
+SET status = sqlc.arg(to_status)::serial_status,
+    first_verified_at = CASE WHEN sqlc.arg(to_status)::serial_status = 'VERIFIED' THEN now() ELSE first_verified_at END,
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status)
+RETURNING first_verified_at;
+-- Tidak ada baris (ErrNoRows) → status sudah diubah proses lain → ErrStaleStatus
 ```
 
 Keduanya dipasang di satu fungsi, `app/serial.go: transitionSerial`, yang dipakai POS sync dan verify, sehingga tidak ada jalur lain yang mengubah status serial. Galat yang keluar: `ErrInvalidTransition` (409 `INVALID_SERIAL_STATUS`) dan `ErrStaleStatus` (409 `SERIAL_STATUS_CHANGED`). T4 menguji siklus penuh, bacaan basi, dan balapan dua proses.
@@ -796,10 +798,10 @@ Jarak dihitung dengan rumus haversine (`domain.HaversineKm`, fungsi murni).
 | Kondisi | Verdict |
 |---|---|
 | R0 | `NOT_FOUND` |
-| Ada R1, R2, atau R3, **atau** kode sudah dipindai oleh ≥ 3 device berbeda (*contoh*) | `GENUINE_WITH_WARNING` |
+| Ada R1, R2, atau R3, **atau** kode dipindai oleh ≥ 3 device berbeda **sejak unit terjual** (*contoh*) | `GENUINE_WITH_WARNING` |
 | Selain itu | `GENUINE` |
 
-Ambang "≥ 3 device berbeda" mencegah peringatan palsu: orang yang mengecek di rak atau keluarga yang memindai ulang tidak membuat pembeli asli melihat peringatan.
+Ambang "≥ 3 device berbeda" mencegah peringatan palsu, dan scan **sebelum** unit terjual tidak ikut dihitung: calon pembeli yang mengecek di rak adalah perilaku yang kita inginkan (`PRODUCT_DEFENSE.md` prinsip 1). Query `CountOtherScanDevices` hanya menghitung scan setelah event `SOLD`. Unit tanpa event `SOLD` (misalnya stok di mitra, yang penjualannya tidak kita lihat) tidak pernah memicu peringatan karena jumlah device. Konsekuensinya: untuk unit mitra, sinyal "pertama diverifikasi sekian bulan lalu" tidak tersedia sampai ada bukti terjual (kode dalam / struk, P2).
 
 ### 10.5 Batasan yang diakui
 
@@ -922,7 +924,7 @@ Race pada idempotency key: dua request dengan key yang sama bersamaan → `INSER
 ```sql
 -- name: ReserveStock :execrows
 -- Atomik: cek ketersediaan dan tambah reserved dalam SATU statement.
--- Stok toko hanya untuk D2C, dan hanya jika semua device POS aktif online.
+-- Stok toko hanya untuk D2C, dan hanya jika toko punya device POS aktif dan semuanya online.
 UPDATE stock_balance sb
 SET reserved   = sb.reserved + sqlc.arg(qty)::int,
     updated_at = now()
@@ -980,12 +982,15 @@ orders (urut id)  →  serial (urut id)  →  stock_balance (urut sku_id)
 | Operasi | Kunci yang diambil | Sesuai urutan global? |
 |---|---|---|
 | Create order | `orders` (baru) → `stock_balance` | Ya |
-| Pay / cancel / expiry | `orders` → `stock_balance` | Ya |
+| Pay | `orders` saja (satu `UPDATE` bersyarat) | Ya |
+| Cancel / expiry | `orders` → `stock_balance` | Ya |
 | Fulfill | `orders` → `serial` → `stock_balance` | Ya |
 | Ship / receive | `serial` → `stock_balance` | Ya |
 | Verify (`SOLD → VERIFIED`) | `serial` saja | Ya |
 | POS sync Tx1 (catat penjualan) | `serial` → `stock_balance` | Ya |
 | POS sync Tx2 (selesaikan oversell) | advisory lock toko → `orders` → `stock_balance` | Ya. Advisory lock hanya dipakai Tx2 (§13.5). |
+
+Klaim bebas deadlock berlaku untuk **operasi yang sudah dibangun** (create, pay, cancel, expiry, POS sync Tx1/Tx2, verify). Fulfill dan ship/receive (belum dibangun) harus mengikuti urutan yang sama saat dibuat. Kunci `KEY SHARE` dari foreign key (misalnya `order_item` → `sku`) tidak membentuk siklus dengan operasi mana pun di atas.
 
 Aturan turunan: serial dalam satu operasi selalu dikunci dengan satu query `... WHERE code = ANY($1) ORDER BY id FOR UPDATE`, bukan satu per satu sesuai urutan input.
 
@@ -1199,7 +1204,7 @@ sequenceDiagram
 | Stok terpotong dua kali (double-deduction) | Pemotongan stok hanya terjadi di cabang "baris baru", di transaksi yang sama dengan `INSERT` | DB transaction |
 | Pembayaran tercatat dua kali (double-charge) | Data pembayaran adalah bagian dari baris `pos_transaction` yang sama | DB |
 | Bug perangkat: UUID sama untuk transaksi berbeda | `payload_hash` dibandingkan → `REJECTED` | Go |
-| Bug perangkat: `local_seq` dipakai ulang | `UNIQUE (device_id, local_seq)` → error → `REJECTED` | DB |
+| Bug perangkat: `local_seq` dipakai ulang | `UNIQUE (device_id, local_seq)`; `ON CONFLICT DO NOTHING` tanpa error, lalu `id` tidak ada → `REJECTED` (`LOCAL_SEQ_REUSED`) | DB + Go |
 | Serial yang sama dijual dua kali (kloning, atau dua kasir) | `SELECT ... FOR UPDATE` + validasi status `IN_STOCK`. Yang kedua → `POS_SERIAL_MISMATCH` | DB + Go |
 | Dua transaksi POS mengunci serial sama dengan urutan berbeda (deadlock) | Semua serial dikunci dalam satu query `ORDER BY id` | DB |
 | Retry dengan JSON yang urutan field-nya berbeda dianggap "isi berbeda" | `payload_hash` dari struct kanonik, bukan raw body (lihat di bawah) | Go |
@@ -1239,9 +1244,10 @@ Pada saat yang sama, server masih melihat ATP = 1 dan menerima order online yang
 1. **Tx1:** penjualan POS **diterima** (fakta fisik). `on_hand`: 1 → 0. Sekarang `reserved (1) > on_hand − quarantine (0)`.
 2. **Tx2:** untuk setiap SKU di batch, ulangi sampai tidak ada kekurangan. **Satu transaksi per order yang dikorbankan:**
    1. `pg_advisory_xact_lock(location_id)`: hanya satu Tx2 per toko pada satu waktu. Tanpa ini, dua sync bersamaan bisa sama-sama melihat kekurangan 1 dan mengorbankan 2 order.
-   2. Hitung `shortfall = reserved − (on_hand − quarantine)`. Jika ≤ 0 → selesai.
-   3. Pilih order **terbaru** di lokasi itu (status `PENDING_PAYMENT`/`PAID`, berisi SKU tersebut) tanpa kunci, lalu kunci dengan `LockOrder` dan **cek ulang statusnya**. Jika sudah bukan `PENDING_PAYMENT`/`PAID` (dibatalkan saat menunggu kunci) → pilih lagi. Jika tidak ada kandidat → selesai.
-   4. Lepas **seluruh** reservasinya (semua item, urut `sku_id`, alasan `RELEASE`), ubah status → `NEEDS_REALLOCATION`, catat `anomaly` `OVERSOLD`.
+   2. Pilih order yang kalah di lokasi itu (status `PENDING_PAYMENT`/`PAID`, berisi SKU tersebut): **yang belum dibayar lebih dulu, lalu yang terbaru**. Dipilih tanpa kunci.
+   3. Kunci order itu dengan `LockOrder` dan **cek ulang statusnya**. Jika sudah bukan `PENDING_PAYMENT`/`PAID` (dibatalkan saat menunggu kunci) → pilih lagi. Jika tidak ada kandidat → selesai.
+   4. Baru sekarang, dengan order terkunci, baca `shortfall = reserved − (on_hand − quarantine)` dengan mengunci baris `stock_balance` (`FOR UPDATE`). Jika ≤ 0 → selesai: cancel atau expiry yang commit sebelum titik ini terlihat, sehingga **tidak ada order yang dikorbankan tanpa kekurangan nyata**. Urutan kunci tetap advisory lock → `orders` → `stock_balance`.
+   5. Lepas **seluruh** reservasinya (semua item, urut `sku_id`, alasan `RELEASE`), ubah status → `NEEDS_REALLOCATION`, catat `anomaly` `OVERSOLD`.
 3. P2 / produksi: worker mencoba mereservasi ulang order itu di lokasi lain dengan `ReserveStock`. Jika gagal → tawarkan ke pelanggan: backorder, atau batal + refund otomatis + voucher.
 
 Urutan kunci Tx2: advisory lock → `orders` → `stock_balance`. Sesuai urutan global §12.4. Advisory lock hanya dipakai Tx2, jadi tidak membentuk siklus dengan operasi lain.
@@ -1250,6 +1256,8 @@ Kenapa satu transaksi per order: jika semua order dikorbankan dalam satu transak
 
 Jika Tx2 gagal, endpoint mengembalikan HTTP 500. POS mengirim ulang batch yang sama (perilaku outbox biasa). Tx1 menjadi `DUPLICATE`, dan Tx2 berjalan lagi karena Tx2 dijalankan untuk semua SKU di batch, termasuk yang `DUPLICATE`.
 
+**Jika POS tidak pernah mengirim ulang:** sweeper (§12.7) juga memanggil `ResolveOversold` setiap putaran. Query `ListOversold` mencari stok toko dengan `reserved > on_hand − quarantine`, lalu menjalankan penyelesaian yang sama. Order `PAID` tidak dibiarkan memegang janji untuk stok yang tidak ada.
+
 ```sql
 -- name: PickOversellVictim :one
 SELECT o.id
@@ -1257,13 +1265,13 @@ FROM orders o
 JOIN order_item oi ON oi.order_id = o.id AND oi.sku_id = sqlc.arg(sku_id)
 WHERE o.location_id = sqlc.arg(location_id)
   AND o.status IN ('PENDING_PAYMENT', 'PAID')
-ORDER BY o.created_at DESC, o.id DESC
+ORDER BY (o.status = 'PAID'), o.created_at DESC, o.id DESC
 LIMIT 1;  -- tanpa FOR UPDATE: lihat catatan di bawah
 ```
 
 **Kenapa kandidat dipilih tanpa kunci:** `SELECT ... LIMIT 1 FOR UPDATE` mengembalikan 0 baris jika kandidat dibatalkan saat menunggu kunci, walau masih ada kandidat lain. Memilih dulu, lalu mengunci dan mengecek ulang status, tidak punya masalah itu.
 
-**Kenapa order terbaru yang dikorbankan:** order lama sudah lebih lama menunggu dan lebih mungkin sudah dibayar dan dalam proses picking. Mengorbankan order terbaru meminimalkan gangguan. Aturan ini adalah **kebijakan bisnis** dan bisa diganti (misalnya: korbankan order yang belum dibayar dulu).
+**Kenapa order yang belum dibayar lebih dulu, lalu yang terbaru:** pelanggan yang sudah membayar adalah yang terakhir kehilangan stok. Di antara order yang sama status bayarnya, order terbaru paling kecil gangguannya: order lama lebih mungkin sudah dalam proses picking. Aturan ini adalah **kebijakan bisnis** dan bisa diganti.
 
 **Kenapa jam POS tidak dipakai untuk menentukan siapa yang lebih dulu:** jam perangkat offline bisa salah, dan hasilnya tetap sama: unit fisik sudah dibawa pulang pelanggan toko.
 
@@ -1279,7 +1287,7 @@ Metrik untuk menyetel `online_buffer` per toko: `conflict_rate` × biaya kompens
 
 ### 13.6 Heartbeat per perangkat (P0)
 
-Heartbeat dicatat **per perangkat POS**, bukan per toko. Jika satu perangkat offline sementara perangkat lain online, perangkat yang offline tetap bisa menjual unit terakhir. Karena itu toko dianggap online hanya jika **semua** perangkat aktif mengirim heartbeat dalam 5 menit terakhir (§12.3). Perangkat yang tidak dipakai lagi dinonaktifkan oleh ops (`active = false`).
+Heartbeat dicatat **per perangkat POS**, bukan per toko. Jika satu perangkat offline sementara perangkat lain online, perangkat yang offline tetap bisa menjual unit terakhir. Karena itu toko dianggap online hanya jika toko itu **punya paling sedikit satu perangkat aktif** dan **semua** perangkat aktif mengirim heartbeat dalam 5 menit terakhir (§12.3). Toko tanpa perangkat terdaftar **tidak** dijual online: tidak ada bukti kasirnya terhubung. Perangkat terdaftar lewat heartbeat **atau lewat `POST /v1/pos/sync`** (sync membuktikan perangkat itu online, dan mengikatnya ke toko: satu perangkat hanya milik satu toko, `409 DEVICE_STORE_MISMATCH`). Perangkat yang tidak dipakai lagi dinonaktifkan oleh ops (`active = false`).
 
 ```sql
 CREATE TABLE pos_device (
@@ -1362,7 +1370,9 @@ Semua path berawalan `/v1`. Format error seragam:
 | `GET` | `/v1/stock?sku=&location=` | P2 | Lihat ATP | 200 | 404 |
 | `GET` | `/healthz` | P0 | Health check (ping DB) | 200 | 503 |
 
-Semua route didaftarkan di satu fungsi, `api.NewRouter(svc, logger, cfg.HTTP)`, di bawah `r.Route("/v1", ...)` (chi). Pemetaan error Go → HTTP dilakukan di satu tempat (`api/errors.go`) dengan sentinel error (`errors.Is`). Graf panggilan dan semua titik patah per endpoint ada di §16.
+Semua route didaftarkan di satu fungsi, `api.NewRouter(svc, logger, cfg.HTTP)`, di bawah `r.Route("/v1", ...)` (chi). **Batas input** (di batas kepercayaan, `api/pos.go`): body maksimal 1 MiB, tepat satu objek JSON (data di belakangnya ditolak), maksimal 500 transaksi per sync, 100 item per transaksi atau order, dan `device_id` maksimal 128 karakter. Pelanggaran → 422.
+
+Pemetaan error Go → HTTP dilakukan di satu tempat (`api/errors.go`) dengan sentinel error (`errors.Is`). Graf panggilan dan semua titik patah per endpoint ada di §16.
 
 ---
 
@@ -1378,7 +1388,7 @@ Setiap endpoint P0 digambar dulu sebagai **graf panggilan**, lalu kodenya dituli
 | A | Jalur sukses | Isi fungsi hanya jalur sukses. Error langsung dikembalikan (`if err != nil { return err }`), tidak ditangani di tengah. |
 | Kardinalitas | Satu nilai atau banyak | Handler = satu kali jalan. POS sync = banyak (loop per transaksi). Sweeper = aliran (ticker). Heartbeat = berlaku 5 menit. |
 | E | Titik patah | **Escape**: hasil domain yang dikembalikan sebagai nilai (4xx, atau hasil per item). **Die**: bug atau infrastruktur → 500, detail hanya di log. **Retry**: hanya di **klien**, dan aman karena idempotensi. Server tidak pernah retry. |
-| R | Kebutuhan node | Dikirim lewat parameter: `api` menerima `*app.Service`, `app.Service` memegang `*store.Store`, dan transaksi berjalan lewat `store.InTx` yang memberi query sqlc terikat ke `pgx.Tx`. Dependensi yang lupa diisi = compile error. Waktu diambil dari `now()` di DB, jadi tidak perlu jam aplikasi. |
+| R | Kebutuhan node | Dikirim lewat parameter: `api` menerima `*app.Service`, `app.Service` memegang `*store.Store`, dan transaksi berjalan lewat `store.InTx` yang memberi query sqlc terikat ke `pgx.Tx`. Dependensi yang lupa diisi = compile error. Waktu keputusan bisnis (kedaluwarsa, heartbeat, kunci status) diambil dari `now()` di DB. Satu-satunya pengecualian: waktu scan konsumen diambil dari jam aplikasi **dan disimpan sendiri** sebagai `scanned_at`, sehingga aturan R1 membandingkan dua nilai dari jam yang sama. |
 | Boundary | Data tidak tepercaya masuk | Hanya di `api`: decode JSON + validasi → tipe input `app`. `app` tidak memvalidasi ulang bentuk input. |
 | Behavior | Pembungkus | Middleware dipasang sekali di router: log request masuk dan selesai (zerolog `hlog`, §5.2), lalu `Recoverer` dan `Timeout` (chi). Tracer SQL dipasang di pool, bukan di modul. Tidak ada logging di dalam modul untuk jalur sukses. |
 | Scope | Acquire / release | `pgx.BeginFunc` (rollback dijamin), `context` menghentikan sweeper, pool ditutup saat shutdown. |
@@ -1417,9 +1427,9 @@ POST /v1/verify (api)
 
 Tests:
 ```ts
-TestEvaluate (unit: T11, T18)
+TestEvaluate_Anomalies, TestDecideVerdict (unit: T11, T18)
   → domain.Evaluate                  // tanpa DB
-TestIntegration_Verify (T12)
+TestIntegration_VerifyHTTP (T12)
   → httptest.Server
     → api
       → app.Verify
@@ -1444,7 +1454,7 @@ POST /v1/orders (api)
   → app.CreateOrder
     → GetOrderIDByIdempotencyKey     // sudah ada → kembalikan order itu
     → pgx.BeginFunc
-      → GetLocationByCode, GetSKUsByCode
+      → GetLocationByCode, GetSKUsByCodes
       → InsertOrder                  // expires_at = now() + 15 menit
       → app.reserve                // per item, urut sku_id
         → ReserveStock               // conditional UPDATE (§12.3)
@@ -1454,7 +1464,7 @@ POST /v1/orders (api)
 
 Tests:
 ```ts
-TestIntegration_CreateOrder_NoOversell (T1), _NoDeadlock (T2), _Idempotent (T8), _StoreRules (T22)
+TestIntegration_CreateOrder_NoOversell (T1), _NoDeadlock (T2), _Idempotent (T8); TestIntegration_StoreStockRules (T22)
   → app.CreateOrder
     → testdb.Pool
 TestIntegration_OrderHTTP (T21)
@@ -1500,9 +1510,9 @@ app.RunExpirySweeper              // goroutine, tiap 30 detik, berhenti saat ctx
 
 Tests:
 ```ts
-TestIntegration_Cancel_Idempotent (T9)
+TestIntegration_CancelOrder_Idempotent (T9)
   → app.CancelOrder → testdb.Pool
-TestIntegration_PayVsExpiry (T15), TestIntegration_Sweeper (T16)
+TestIntegration_PayVsExpiry (T15), TestIntegration_ExpireDue (T16)
   → app.PayOrder ∥ app.ExpireDue → testdb.Pool
 ```
 
@@ -1686,7 +1696,7 @@ Pola test konkurensi: N goroutine menunggu satu channel `start`, lalu `close(sta
 | T10 | P1 | Modul | Dua transaksi POS berbeda menjual serial yang sama | Satu valid, satu `ACCEPTED_WITH_ISSUES` + anomali `POS_SERIAL_MISMATCH`. `on_hand` hanya dipotong untuk yang valid. Invariant lolos. |
 | T12 | P1 | HTTP | `POST /v1/verify` end-to-end: kode palsu, scan pertama, scan ulang device lain, scan di luar wilayah | Verdict dan anomali sesuai §10.4. |
 | **T14** | P0 | Modul | Lokasi toko dengan 50 order aktif. 50 cancel dan 50 POS sync (yang memicu oversell) berjalan bersamaan | Hanya keadaan akhir yang dicek: tidak ada error `40P01` sama sekali; untuk setiap SKU `reserved ≤ on_hand − quarantine`; I1–I2 lolos. |
-| T15 | P1 | Modul | Order dengan `expires_at` sudah lewat: pay dan sweeper dijalankan bersamaan, 20× | Setiap kali tepat satu pemenang: `PAID` dengan reservasi utuh, **atau** `EXPIRED` dengan reservasi dilepas. Tidak pernah `PAID` tanpa reservasi. |
+| T15 | P1 | Modul | Order dengan `expires_at` tepat di batas (+30 ms): pay dan sweeper dijalankan bersamaan dengan jeda acak, 20× | Setiap kali tepat satu pemenang: `PAID` dengan reservasi utuh, **atau** `EXPIRED` dengan reservasi dilepas. Tidak pernah `PAID` tanpa reservasi. |
 | T16 | P1 | Modul | 5 order `PENDING_PAYMENT` lewat `expires_at`, 2 belum. Jalankan sweeper 2× berurutan | Tepat 5 `EXPIRED`, `reserved` turun tepat 5 × qty, 2 order lain tidak tersentuh. |
 | T22 | P1 | Modul | (a) Toko dengan 2 device aktif: satu heartbeat segar, satu basi, lalu order D2C. (b) Semua device segar, lalu order `MARKETPLACE` ke toko itu. | Keduanya 409 `INSUFFICIENT_STOCK`: stok toko tidak bisa direservasi. |
 | T23 | P1 | Modul | 4 pallet: 2 dari 10 unit di luar wilayah; 4 dari 10; 4 dari 20; 0 dari 10 | Query pallet §8.4 (`LeakageByPallet`, ≥ 3 unit **dan** ≥ 30%) hanya mengembalikan pallet kedua: yang pertama di bawah 3 unit, yang ketiga hanya 20%. |
@@ -1711,13 +1721,13 @@ Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
 |---|---|---|
 | `IMPOSSIBLE_TRAVEL` | > 100 km **dan** > 800 km/jam | Abaikan GPS yang meleset; di atas kecepatan pesawat komersial |
 | Wilayah distributor | Lingkaran (titik pusat + radius) | Tanpa PostGIS dan reverse geocoding |
-| Heartbeat dianggap basi | 5 menit, **per perangkat** | Jika satu perangkat aktif basi, stok toko tidak dijual online |
+| Heartbeat dianggap basi | 5 menit, **per perangkat** | Jika satu perangkat aktif basi, atau toko tidak punya perangkat aktif, stok toko tidak dijual online |
 | Sumber stok order `MARKETPLACE` | Bukan `OWN_STORE` | Pembatalan sisi seller di marketplace kena penalti |
 | `online_buffer` toko | 1 unit. Toko demo di seed: 0, agar split-brain bisa diperagakan (T7, demo #4). | Unit terakhir disisakan untuk pembeli walk-in |
 | TTL reservasi | 15 menit | Cukup untuk membayar, tidak mengunci stok terlalu lama |
-| Order yang dikorbankan saat oversell | Terbaru dulu | Order lama lebih mungkin sudah dibayar dan sedang di-picking |
+| Order yang dikorbankan saat oversell | Belum dibayar dulu, lalu terbaru | Pelanggan yang sudah membayar paling akhir kalah; order lama lebih mungkin sudah di-picking |
 | Bukti terjual di lokasi mitra | Klaim kode dalam / struk (P2). Scan QR luar hanya dicatat. | Scan luar bisa dilakukan siapa saja di rak |
-| Peringatan "sudah dipindai" | ≥ 3 device berbeda | Calon pembeli atau keluarga yang memindai tidak memicu peringatan |
+| Peringatan "sudah dipindai" | ≥ 3 device berbeda, dihitung hanya sejak unit terjual | Calon pembeli atau keluarga yang memindai di rak tidak memicu peringatan |
 | Serial POS bermasalah | Tidak memotong stok; dicatat sebagai anomali | Stok berubah hanya jika serial berubah (I1 selalu benar) |
 | Ambang cluster kebocoran | ≥ 3 unit **dan** ≥ 30% dari unit pallet yang pernah dipindai | Relatif terhadap scan coverage; disetel ulang dari data |
 | `HUB` sebagai sumber order online | Ya | Stok hub ikut dijual |
@@ -1744,6 +1754,8 @@ Urutan presentasi (jalankan `make seed` dulu untuk reset data demo):
 | Heartbeat per perangkat, semua harus online | Tidak ada perangkat offline yang "tersembunyi" | Satu perangkat bermasalah membuat stok toko keluar dari online sampai dinonaktifkan ops |
 | Stok toko hanya untuk D2C | Konflik POS tidak pernah membatalkan order marketplace | Stok toko tidak ikut dijual di marketplace |
 | Sell-out mitra hanya dari klaim kode dalam / struk | Scan di rak tidak mencatat penjualan palsu | Angka sell-out mitra lebih rendah dari kenyataan (hanya yang mengklaim) |
+| `Idempotency-Key` order yang dipakai ulang dengan isi berbeda mengembalikan order lama | Sederhana: tidak ada kolom hash di `orders` | Bug klien yang salah memakai key tidak terdeteksi. POS sync membandingkan hash payload; untuk order bisa ditambah `request_hash` bila dibutuhkan. |
+| Kode serial demo di seed berurutan (`MG00000000001`) | Bisa diketik tangan saat demo | Hanya untuk demo: produksi memakai kode acak (§8.1) |
 | Tanpa auth | Fokus pada inti assignment | **Wajib** ditambahkan sebelum produksi |
 
 ---

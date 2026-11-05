@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -118,7 +119,7 @@ func (s *Service) stockLines(ctx context.Context, items []OrderItem) ([]stockLin
 		}
 		lines[i] = stockLine{skuID: id, qty: it.Qty}
 	}
-	slices.SortFunc(lines, func(a, b stockLine) int { return int(a.skuID - b.skuID) })
+	slices.SortFunc(lines, func(a, b stockLine) int { return cmp.Compare(a.skuID, b.skuID) })
 	return lines, nil
 }
 

@@ -59,7 +59,7 @@ Satu benang merah: **scan konsumen adalah aset data utama**. Scan yang sama dipa
 
 | Data | Tujuan | Aturan |
 |---|---|---|
-| Lokasi scan | Deteksi kloning dan gray market | Minta izin dengan alasan yang jelas. Setelah aturan dijalankan, simpan level kabupaten/kota saja, bukan lat/lng mentah. |
+| Lokasi scan | Deteksi kloning dan gray market | Minta izin dengan alasan yang jelas. **Target produksi:** setelah aturan dijalankan, simpan level kabupaten/kota saja. **Prototype:** menyimpan lat/lng mentah di `scan_event` dan `anomaly.details`; pengurangan presisi belum dibangun. |
 | ID device anonim | Membedakan scan dari orang yang berbeda | Tidak dihubungkan ke identitas tanpa login |
 | Foto struk, nomor HP, akun member | Klaim poin dan atribusi kampanye | Persetujuan eksplisit per tujuan; ada masa simpan; bisa dihapus atas permintaan |
 
@@ -101,7 +101,7 @@ Ambangnya **relatif**, karena scan coverage rendah (A4). Ambang absolut seperti 
 **Kenapa ini tetap "tanpa inspeksi fisik":** sistem sudah menunjuk rantai lengkapnya sebelum ada orang yang turun ke lapangan, yaitu satuan → karton → pallet → surat jalan → distributor → tanggal kirim. Test-buy adalah **pembelian biasa** dari marketplace, bukan inspeksi gudang distributor. Gunanya hanya untuk mengunci bukti yang sudah ditunjuk sistem.
 
 **Contoh narasi bukti:**
-> Pallet `MGPAL7Q2K9` (480 unit) dikirim ke Distributor Medan dengan surat jalan DO-1031 pada 3 Oktober. Order distributor itu bulan ini naik 40%, tetapi scan di Sumatera Utara datar. Dari 14 unit pallet itu yang pernah dipindai, 6 dipindai di Jakarta (indikasi). Test-buy dari toko marketplace "X" pada 28 Oktober menghasilkan 3 unit, ketiganya dari karton di pallet yang sama (bukti).
+> Pallet `MG4P7Q2K9XH3Z` (480 unit) dikirim ke Distributor Medan dengan surat jalan DO-1031 pada 3 Oktober. Order distributor itu bulan ini naik 40%, tetapi scan di Sumatera Utara datar. Dari 14 unit pallet itu yang pernah dipindai, 6 dipindai di Jakarta (indikasi). Test-buy dari toko marketplace "X" pada 28 Oktober menghasilkan 3 unit, ketiganya dari karton di pallet yang sama (bukti).
 
 ### 4.3 Penegakan: kontrak subsidi, bukan kontrol harga (*usulan, perlu review legal*)
 
@@ -124,6 +124,25 @@ Penegakan dibingkai sebagai **kepatuhan kontrak subsidi**: harga khusus diberika
 | Repack oleh distributor memutus hubungan karton–pallet | Bukti tingkat pallet hilang | Unit tetap membawa `partner_id`; bukti per unit masih ada |
 
 ### 4.5 Metrik bisnis
+
+**Perkiraan, bukan hitungan bukti.** Karena scan coverage rendah, unit yang *terbukti* bocor hanya batas bawah. Perkiraan total memakai tingkat kebocoran dari unit yang dipindai:
+
+```
+subsidi_bocor_perkiraan = leakage_rate × volume_alokasi × selisih_harga_subsidi
+```
+
+Contoh hitungan titik impas serialisasi (semua angka *contoh*, bukan data):
+
+| Besaran | Nilai |
+|---|---|
+| Volume alokasi ke distributor daerah | 100.000 unit/bulan |
+| Selisih harga subsidi per unit | Rp 20.000 |
+| Biaya stiker hologram + QR per unit | Rp 150 → Rp 15 juta/bulan |
+| Nilai kebocoran per 1% tingkat kebocoran | 100.000 × 1% × Rp 20.000 = Rp 20 juta/bulan |
+| **Titik impas** | Rp 15 juta ÷ Rp 20 juta = kebocoran **0,75%** |
+
+Jika kebocoran sebenarnya di atas titik impas, serialisasi sudah membayar dirinya sendiri sebelum menghitung manfaat anti-pemalsuan. Angka nyata diambil dari baseline fase 1 (bagian 9).
+
 
 | Metrik | Definisi |
 |---|---|
@@ -162,6 +181,14 @@ Sistem lama menyamakan **"memindai QR"** dengan **"memiliki barang"**. QR luar b
 | Satu struk dipakai untuk banyak klaim | Kunci struk = toko + nomor struk + waktu. Jumlah serial yang diklaim dengan struk yang sama ≤ jumlah unit di struk. |
 | Banyak akun dari satu perangkat | Klaim dari satu perangkat untuk banyak akun ditandai untuk ditinjau |
 | Klaim borongan | Batas kecepatan per member dan per titik lokasi (*contoh*: > 10 klaim/jam → `HELD`); batas poin per member per hari |
+
+**Kelemahan yang diakui di kanal mitra:**
+
+| Ancaman | Kenapa sulit | Pengaman |
+|---|---|---|
+| Kode lapis dalam dikumpulkan dari **kemasan bekas** yang dibuang | Kode itu asli dan belum pernah diklaim | Jendela klaim dari tanggal kirim ke toko (*contoh*: 60 hari), batas poin per member per hari, dan pemantauan **rasio klaim terhadap volume kirim per mitra**: klaim yang jauh melebihi perkiraan penjualan mitra itu ditandai |
+| Struk **tidak bisa diverifikasi** terhadap POS Indomaret (*black-box*) | Hanya bisa dicek duplikasinya, bukan keasliannya | Struk diperlakukan sebagai bukti **lebih lemah** daripada kode dalam: poin per klaim struk dibatasi lebih kecil, dan lolos ke `AVAILABLE` hanya setelah masa tunggu penuh |
+| Satu orang mengklaim untuk banyak akun | Akun mudah dibuat | Klaim banyak akun dari satu perangkat ditandai (tabel di atas), nomor HP terverifikasi OTP |
 
 ### 5.4 Siklus aktivasi poin
 
@@ -218,8 +245,8 @@ Tidak ada satu sinyal yang sempurna. Gunakan **beberapa sinyal**, pahami bias ma
 
 | Sinyal | Cara kerja | Kekuatan | Bias / kelemahan |
 |---|---|---|---|
-| **S1. Dynamic claim voucher / geofencing promo** | Iklan memberi **kode sekali pakai** per klik atau per member, bukan kode statis yang bisa bocor ke grup promo. Voucher hanya berlaku jika kemasan dipindai **dalam radius *contoh* 200 m dari toko Indomaret** selama periode kampanye. | Hubungan langsung iklan → pembelian → unit fisik (serial) → **toko** tempat membeli | Hanya menangkap konsumen yang aktif; ada biaya insentif |
-| **S2. Insentif scan kemasan pasca-beli kasir** | Halaman scan menawarkan hadiah kecil (poin, undian). Atribusi ke kampanye lewat **login member atau nomor HP** (misalnya dari iklan click-to-WhatsApp), bukan lewat cookie, karena browser di dalam aplikasi Instagram/TikTok terpisah dari browser kamera. | Volume besar; sekaligus menaikkan scan coverage untuk Kasus 1 | Tanpa login, scan dihitung untuk metrik per wilayah tetapi tidak diatribusikan |
+| **S1. Dynamic claim voucher / geofencing promo** | Iklan memberi **kode sekali pakai** per klik atau per member, bukan kode statis yang bisa bocor ke grup promo. Voucher adalah **cashback setelah membeli**, bukan potongan harga di kasir (POS Indomaret *black-box* tidak bisa menebus voucher). Cashback dibayar setelah member membuktikan pembelian dengan **kode lapis dalam atau foto struk** (bukti yang sama seperti Kasus 2). *Geofence* hanya dipakai untuk **atribusi toko**: scan di radius *contoh* 200 m dari toko Indomaret mencatat di toko mana unit itu dibeli. Geofence **tidak pernah membuka nilai** apa pun, karena scan di dalam toko bisa dilakukan sebelum membeli. | Hubungan langsung iklan → pembelian terbukti → unit fisik (serial) → **toko** tempat membeli | Hanya menangkap konsumen yang aktif; ada biaya insentif; struk lebih lemah daripada kode dalam (lihat bagian 5.3) |
+| **S2. Insentif scan kemasan pasca-beli kasir** | Setelah membeli, halaman scan menawarkan hadiah kecil (undian, atau poin lewat jalur klaim yang sama dengan Kasus 2: **kode lapis dalam atau struk**, bukan scan QR luar). Atribusi ke kampanye lewat **login member atau nomor HP** (misalnya dari iklan click-to-WhatsApp), bukan lewat cookie, karena browser di dalam aplikasi Instagram/TikTok terpisah dari browser kamera. | Volume besar; sekaligus menaikkan scan coverage untuk Kasus 1 | Tanpa login, scan dihitung untuk metrik per wilayah tetapi tidak diatribusikan |
 | **S3. Korelasi telemetri kenaikan distribusi per rayon** (diuji dengan geo-holdout) | Iklan ditargetkan ke sebagian **rayon** (*treatment*). Rayon lain yang mirip mendapat iklan lebih sedikit atau tidak sama sekali (*control*). Bandingkan perubahan scan per rayon dan pengiriman ke DC Indomaret. | **Satu-satunya yang menunjukkan kausalitas** | Butuh area kontrol; ada jeda karena siklus re-order |
 
 ### 6.4 Desain eksperimen geo-holdout (S3)
@@ -239,7 +266,8 @@ lift = (treatment_sesudah − treatment_sebelum) − (control_sesudah − contro
    | Scan konsumen per 1.000 unit yang dikirim ke rayon itu | **Utama**, muncul lebih cepat |
    | Pengiriman ke DC Indomaret di rayon itu | Konfirmasi, muncul belakangan karena siklus re-order |
 
-6. Kalibrasi rasio scan terhadap penjualan dari OwnStore, karena di sana penjualan nyata diketahui. Rasio ini dipakai untuk memperkirakan sell-out Indomaret dari jumlah scan.
+6. **Kekuatan statistik.** Jumlah rayon terbatas (puluhan, bukan ratusan), jadi sebelum kampanye dihitung dulu **efek minimum yang bisa dideteksi** (MDE) dari variasi historis scan dan pengiriman per rayon. Jika MDE lebih besar dari lonjakan yang masuk akal, eksperimen tidak layak dan hasilnya tidak boleh dipakai untuk menyimpulkan apa pun. Iklan Instagram/TikTok menargetkan kota atau kabupaten, bukan area DC, sehingga rayon dipetakan dari kota/kabupaten yang dilayani satu DC, dan **rayon penyangga** (tanpa iklan, tidak dihitung) dipasang di antara treatment dan control agar iklan tidak bocor ke control. Alternatif jika rayon terlalu sedikit: *synthetic control* dari rayon yang tidak diiklankan.
+7. Kalibrasi rasio scan terhadap penjualan dari OwnStore, karena di sana penjualan nyata diketahui. Rasio ini dipakai untuk memperkirakan sell-out Indomaret dari jumlah scan.
 
 ### 6.5 Dukungan sistem
 
@@ -293,7 +321,7 @@ Lapisan ini membuat konflik **jarang**, tetapi tidak nol. Konflik masih bisa ter
 
 **Lapis 3 — Penyelesaian konflik yang adil** (§13.5)
 1. Penjualan kasir **diterima**, karena barang sudah dibawa pulang dan uang sudah diterima.
-2. Sistem menghitung kekurangan stok, lalu melepas reservasi **order online D2C terbaru** untuk SKU itu.
+2. Sistem menghitung kekurangan stok, lalu melepas reservasi **order online D2C** untuk SKU itu, yang belum dibayar lebih dulu, lalu yang terbaru.
 3. Order itu ditandai `NEEDS_REALLOCATION` dan langsung masuk alur pemulihan di bawah.
 
 ### 7.3 Konflik alokasi yang adil bagi pelanggan toko dan online
@@ -315,7 +343,7 @@ Jam perangkat tidak dipakai untuk menentukan siapa yang lebih dulu, karena jam p
 | Jika gagal | Notifikasi ke pelanggan **< 15 menit** setelah toko sync |
 | Pilihan untuk pelanggan | (a) Tunggu restock dengan estimasi tanggal, atau (b) batal + refund otomatis + voucher (*contoh*: 10% nilai order) |
 
-**Kenapa order terbaru yang dilepas:** order lama sudah lebih lama menunggu, lebih mungkin sudah dibayar, dan mungkin sedang di-picking. Ini kebijakan bisnis yang bisa diganti, misalnya "lepas yang belum dibayar dulu".
+**Kenapa order yang belum dibayar dilepas lebih dulu, lalu yang terbaru:** pelanggan yang sudah membayar adalah yang terakhir kehilangan stok. Di antara order dengan status bayar yang sama, order terbaru paling kecil gangguannya, karena order lama lebih mungkin sudah di-picking. Ini kebijakan bisnis yang bisa diganti. Order dilepas **utuh**: kekurangan 1 unit tetap membuat seluruh order itu dialihkan, karena memisah order (*split*) di luar scope prototype.
 
 ### 7.5 Batasan sistem (trade-offs)
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -52,8 +53,12 @@ func reserve(ctx context.Context, q *store.Queries, orderID, locationID int64, c
 // release gives reserved stock back (cancel, expiry, lost conflict).
 func release(ctx context.Context, q *store.Queries, orderID, locationID int64, lines []stockLine, refType string) error {
 	for _, l := range lines {
-		if _, err := q.ReleaseStock(ctx, store.ReleaseStockParams{Qty: l.qty, SkuID: l.skuID, LocationID: locationID}); err != nil {
+		n, err := q.ReleaseStock(ctx, store.ReleaseStockParams{Qty: l.qty, SkuID: l.skuID, LocationID: locationID})
+		if err != nil {
 			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("release: no stock_balance row for sku %d at location %d", l.skuID, locationID)
 		}
 		m := movement{locationID: locationID, deltaReserved: -l.qty, reason: domain.MovementRelease, refType: refType, refID: strconv.FormatInt(orderID, 10)}
 		if err := ledger(ctx, q, l, m); err != nil {
@@ -73,7 +78,8 @@ func sellPOS(ctx context.Context, q *store.Queries, txnID uuid.UUID, locationID 
 		}
 		if n == 0 {
 			// A valid serial is IN_STOCK here, so a stock_balance row must exist (invariant I1).
-			return domain.ErrInsufficientStock
+			// This is a data bug, not a business outcome: it is a 500, never "insufficient stock".
+			return fmt.Errorf("sale: no stock_balance row for sku %d at location %d: invariant I1 broken", l.skuID, locationID)
 		}
 		m := movement{locationID: locationID, deltaOnHand: -l.qty, reason: domain.MovementSalePOS, refType: "POS_TXN", refID: txnID.String()}
 		if err := ledger(ctx, q, l, m); err != nil {
