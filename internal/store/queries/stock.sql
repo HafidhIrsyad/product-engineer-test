@@ -30,3 +30,33 @@ VALUES (
     sqlc.arg(sku_id), sqlc.arg(location_id), sqlc.arg(delta_on_hand), sqlc.arg(delta_reserved),
     sqlc.arg(delta_quarantine), sqlc.arg(reason), sqlc.arg(ref_type), sqlc.arg(ref_id)
 );
+
+-- name: ShipOutStock :execrows
+-- Only stock nobody has been promised can leave. 0 rows = not enough free stock.
+UPDATE stock_balance
+SET on_hand    = on_hand - sqlc.arg(qty)::int,
+    updated_at = now()
+WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id)
+  AND on_hand - reserved - quarantine >= sqlc.arg(qty)::int;
+
+-- name: ReceiveStock :exec
+INSERT INTO stock_balance (sku_id, location_id, on_hand)
+VALUES (sqlc.arg(sku_id), sqlc.arg(location_id), sqlc.arg(qty)::int)
+ON CONFLICT (sku_id, location_id)
+DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand, updated_at = now();
+
+-- name: AdjustQuarantine :execrows
+-- delta +1 sets a unit apart, -1 brings it back. CHECK (quarantine <= on_hand) guards the upper end.
+UPDATE stock_balance
+SET quarantine = quarantine + sqlc.arg(delta)::int,
+    updated_at = now()
+WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id);
+
+-- name: FulfillStock :execrows
+-- An online order takes physical units: they leave on_hand and the promise (reserved) is kept.
+UPDATE stock_balance
+SET on_hand    = on_hand - sqlc.arg(qty)::int,
+    reserved   = reserved - sqlc.arg(qty)::int,
+    updated_at = now()
+WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id)
+  AND reserved >= sqlc.arg(qty)::int;

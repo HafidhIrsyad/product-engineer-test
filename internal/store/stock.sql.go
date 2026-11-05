@@ -11,6 +11,52 @@ import (
 	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 )
 
+const adjustQuarantine = `-- name: AdjustQuarantine :execrows
+UPDATE stock_balance
+SET quarantine = quarantine + $1::int,
+    updated_at = now()
+WHERE sku_id = $2 AND location_id = $3
+`
+
+type AdjustQuarantineParams struct {
+	Delta      int32
+	SkuID      int64
+	LocationID int64
+}
+
+// delta +1 sets a unit apart, -1 brings it back. CHECK (quarantine <= on_hand) guards the upper end.
+func (q *Queries) AdjustQuarantine(ctx context.Context, arg AdjustQuarantineParams) (int64, error) {
+	result, err := q.db.Exec(ctx, adjustQuarantine, arg.Delta, arg.SkuID, arg.LocationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const fulfillStock = `-- name: FulfillStock :execrows
+UPDATE stock_balance
+SET on_hand    = on_hand - $1::int,
+    reserved   = reserved - $1::int,
+    updated_at = now()
+WHERE sku_id = $2 AND location_id = $3
+  AND reserved >= $1::int
+`
+
+type FulfillStockParams struct {
+	Qty        int32
+	SkuID      int64
+	LocationID int64
+}
+
+// An online order takes physical units: they leave on_hand and the promise (reserved) is kept.
+func (q *Queries) FulfillStock(ctx context.Context, arg FulfillStockParams) (int64, error) {
+	result, err := q.db.Exec(ctx, fulfillStock, arg.Qty, arg.SkuID, arg.LocationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertStockMovement = `-- name: InsertStockMovement :exec
 INSERT INTO stock_movement (sku_id, location_id, delta_on_hand, delta_reserved, delta_quarantine, reason, ref_type, ref_id)
 VALUES (
@@ -41,6 +87,24 @@ func (q *Queries) InsertStockMovement(ctx context.Context, arg InsertStockMoveme
 		arg.RefType,
 		arg.RefID,
 	)
+	return err
+}
+
+const receiveStock = `-- name: ReceiveStock :exec
+INSERT INTO stock_balance (sku_id, location_id, on_hand)
+VALUES ($1, $2, $3::int)
+ON CONFLICT (sku_id, location_id)
+DO UPDATE SET on_hand = stock_balance.on_hand + EXCLUDED.on_hand, updated_at = now()
+`
+
+type ReceiveStockParams struct {
+	SkuID      int64
+	LocationID int64
+	Qty        int32
+}
+
+func (q *Queries) ReceiveStock(ctx context.Context, arg ReceiveStockParams) error {
+	_, err := q.db.Exec(ctx, receiveStock, arg.SkuID, arg.LocationID, arg.Qty)
 	return err
 }
 
@@ -100,6 +164,29 @@ func (q *Queries) ReserveStock(ctx context.Context, arg ReserveStockParams) (int
 		arg.LocationID,
 		arg.Channel,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const shipOutStock = `-- name: ShipOutStock :execrows
+UPDATE stock_balance
+SET on_hand    = on_hand - $1::int,
+    updated_at = now()
+WHERE sku_id = $2 AND location_id = $3
+  AND on_hand - reserved - quarantine >= $1::int
+`
+
+type ShipOutStockParams struct {
+	Qty        int32
+	SkuID      int64
+	LocationID int64
+}
+
+// Only stock nobody has been promised can leave. 0 rows = not enough free stock.
+func (q *Queries) ShipOutStock(ctx context.Context, arg ShipOutStockParams) (int64, error) {
+	result, err := q.db.Exec(ctx, shipOutStock, arg.Qty, arg.SkuID, arg.LocationID)
 	if err != nil {
 		return 0, err
 	}

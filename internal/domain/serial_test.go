@@ -69,3 +69,16 @@ func TestParseSerialCode(t *testing.T) {
 		})
 	}
 }
+
+// T24: generated codes are valid, random and never repeat.
+func TestNewSerialCode(t *testing.T) {
+	seen := map[domain.SerialCode]bool{}
+	for range 5000 {
+		code := domain.NewSerialCode()
+		parsed, err := domain.ParseSerialCode(string(code))
+		require.NoError(t, err, "a generated code must pass the same check a scan does")
+		assert.Equal(t, code, parsed)
+		assert.False(t, seen[code], "duplicate code %s", code)
+		seen[code] = true
+	}
+}

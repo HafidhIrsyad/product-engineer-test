@@ -51,7 +51,7 @@ VALUES (sqlc.arg(type), sqlc.arg(serial_id), sqlc.arg(location_id), sqlc.arg(par
 UPDATE stock_balance SET on_hand = on_hand - sqlc.arg(qty)::int, updated_at = now()
 WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id);
 
--- name: LockStoreOversell :exec
+-- name: LockLocationOversell :exec
 SELECT pg_advisory_xact_lock(1001, sqlc.arg(location_id)::int);
 
 -- name: GetShortfall :one
@@ -69,12 +69,21 @@ WHERE o.location_id = sqlc.arg(location_id)
 ORDER BY (o.status = 'PAID'), o.created_at DESC, o.id DESC
 LIMIT 1;
 
--- name: GetSerialStatus :one
-SELECT status FROM serial WHERE id = $1;
-
 -- name: ListOversold :many
 SELECT sb.location_id, sb.sku_id
 FROM stock_balance sb
 JOIN location l ON l.id = sb.location_id
-WHERE l.type = 'OWN_STORE' AND sb.reserved > sb.on_hand - sb.quarantine
+WHERE sb.reserved > sb.on_hand - sb.quarantine
 ORDER BY sb.location_id, sb.sku_id;
+
+-- name: ListPosGaps :many
+-- Sequence numbers a device skipped: sales that were never received (yet), or were lost on the device.
+WITH seqs AS (
+    SELECT device_id, local_seq, LAG(local_seq) OVER (PARTITION BY device_id ORDER BY local_seq) AS prev
+    FROM pos_transaction
+    WHERE store_id = $1
+)
+SELECT device_id, (prev + 1)::bigint AS from_seq, (local_seq - 1)::bigint AS to_seq
+FROM seqs
+WHERE prev IS NOT NULL AND local_seq > prev + 1
+ORDER BY device_id, from_seq;

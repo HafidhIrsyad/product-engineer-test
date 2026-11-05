@@ -28,6 +28,16 @@ func classify(err error) (status int, code string) {
 		return http.StatusUnprocessableEntity, "UNKNOWN_LOCATION"
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return http.StatusNotFound, "ORDER_NOT_FOUND"
+	case errors.Is(err, domain.ErrIdempotencyKeyReused):
+		return http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED"
+	case errors.Is(err, domain.ErrSerialNotFound):
+		return http.StatusNotFound, "SERIAL_NOT_FOUND"
+	case errors.Is(err, domain.ErrBatchExists):
+		return http.StatusConflict, "BATCH_EXISTS"
+	case errors.Is(err, domain.ErrMixedContainer):
+		return http.StatusConflict, "MIXED_CONTAINER"
+	case errors.Is(err, domain.ErrWrongLocation):
+		return http.StatusConflict, "WRONG_LOCATION"
 	case errors.Is(err, domain.ErrStoreNotFound):
 		return http.StatusNotFound, "STORE_NOT_FOUND"
 	case errors.Is(err, domain.ErrInsufficientStock):

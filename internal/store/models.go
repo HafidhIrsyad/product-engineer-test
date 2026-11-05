@@ -277,6 +277,8 @@ type Order struct {
 	ExpiresAt      time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	PaidAt         *time.Time
+	RequestHash    []byte
 }
 
 type OrderItem struct {

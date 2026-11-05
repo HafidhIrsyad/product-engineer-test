@@ -5,11 +5,13 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 
 	"github.com/HafidhIrsyad/product-engineer-test/internal/domain"
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
@@ -71,6 +73,12 @@ func (s *Service) SyncPOS(ctx context.Context, in SyncPOSInput) ([]PosResult, er
 	touched := map[int64]bool{}
 	for _, t := range txns {
 		res, skuIDs, err := s.syncTxn(ctx, loc, in.DeviceID, t)
+		if errors.Is(err, domain.ErrDataInconsistent) {
+			// Retrying cannot fix this, and the other sales of the batch must not wait for it.
+			zerolog.Ctx(ctx).Error().Err(err).Str("transaction", t.ID.String()).Msg("pos transaction rejected")
+			results = append(results, rejected(t.ID, domain.RejectDataInconsistent))
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("transaction %s: %w", t.ID, err)
 		}
@@ -264,7 +272,7 @@ func (s *Service) resolveOversell(ctx context.Context, storeID, skuID int64) err
 	for {
 		more := false
 		err := s.store.InTx(ctx, func(q *store.Queries) error {
-			if err := q.LockStoreOversell(ctx, int32(storeID)); err != nil {
+			if err := q.LockLocationOversell(ctx, int32(storeID)); err != nil {
 				return err
 			}
 			orderID, err := q.PickOversellVictim(ctx, store.PickOversellVictimParams{SkuID: skuID, LocationID: storeID})
@@ -339,4 +347,28 @@ func (s *Service) ResolveOversold(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+type PosGap struct {
+	DeviceID string `json:"device_id"`
+	FromSeq  int64  `json:"from_seq"`
+	ToSeq    int64  `json:"to_seq"`
+}
+
+// PosGaps lists the sequence numbers a store's devices skipped. Idempotency stops duplicates but
+// cannot notice a sale that never arrived; a gap is where to look (against the store's cash).
+func (s *Service) PosGaps(ctx context.Context, storeCode string) ([]PosGap, error) {
+	loc, err := s.posStore(ctx, storeCode)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.store.ListPosGaps(ctx, loc.ID)
+	if err != nil {
+		return nil, err
+	}
+	gaps := make([]PosGap, len(rows))
+	for i, r := range rows {
+		gaps[i] = PosGap{DeviceID: r.DeviceID, FromSeq: r.FromSeq, ToSeq: r.ToSeq}
+	}
+	return gaps, nil
 }

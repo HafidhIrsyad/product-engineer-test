@@ -49,17 +49,6 @@ func (q *Queries) GetPosTransaction(ctx context.Context, id uuid.UUID) (GetPosTr
 	return i, err
 }
 
-const getSerialStatus = `-- name: GetSerialStatus :one
-SELECT status FROM serial WHERE id = $1
-`
-
-func (q *Queries) GetSerialStatus(ctx context.Context, id int64) (domain.SerialStatus, error) {
-	row := q.db.QueryRow(ctx, getSerialStatus, id)
-	var status domain.SerialStatus
-	err := row.Scan(&status)
-	return status, err
-}
-
 const getShortfall = `-- name: GetShortfall :one
 SELECT (reserved - (on_hand - quarantine))::int AS shortfall
 FROM stock_balance
@@ -202,7 +191,7 @@ const listOversold = `-- name: ListOversold :many
 SELECT sb.location_id, sb.sku_id
 FROM stock_balance sb
 JOIN location l ON l.id = sb.location_id
-WHERE l.type = 'OWN_STORE' AND sb.reserved > sb.on_hand - sb.quarantine
+WHERE sb.reserved > sb.on_hand - sb.quarantine
 ORDER BY sb.location_id, sb.sku_id
 `
 
@@ -229,6 +218,54 @@ func (q *Queries) ListOversold(ctx context.Context) ([]ListOversoldRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const listPosGaps = `-- name: ListPosGaps :many
+WITH seqs AS (
+    SELECT device_id, local_seq, LAG(local_seq) OVER (PARTITION BY device_id ORDER BY local_seq) AS prev
+    FROM pos_transaction
+    WHERE store_id = $1
+)
+SELECT device_id, (prev + 1)::bigint AS from_seq, (local_seq - 1)::bigint AS to_seq
+FROM seqs
+WHERE prev IS NOT NULL AND local_seq > prev + 1
+ORDER BY device_id, from_seq
+`
+
+type ListPosGapsRow struct {
+	DeviceID string
+	FromSeq  int64
+	ToSeq    int64
+}
+
+// Sequence numbers a device skipped: sales that were never received (yet), or were lost on the device.
+func (q *Queries) ListPosGaps(ctx context.Context, storeID int64) ([]ListPosGapsRow, error) {
+	rows, err := q.db.Query(ctx, listPosGaps, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPosGapsRow
+	for rows.Next() {
+		var i ListPosGapsRow
+		if err := rows.Scan(&i.DeviceID, &i.FromSeq, &i.ToSeq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockLocationOversell = `-- name: LockLocationOversell :exec
+SELECT pg_advisory_xact_lock(1001, $1::int)
+`
+
+func (q *Queries) LockLocationOversell(ctx context.Context, locationID int32) error {
+	_, err := q.db.Exec(ctx, lockLocationOversell, locationID)
+	return err
 }
 
 const lockSerialsByCodes = `-- name: LockSerialsByCodes :many
@@ -273,15 +310,6 @@ func (q *Queries) LockSerialsByCodes(ctx context.Context, codes []string) ([]Loc
 		return nil, err
 	}
 	return items, nil
-}
-
-const lockStoreOversell = `-- name: LockStoreOversell :exec
-SELECT pg_advisory_xact_lock(1001, $1::int)
-`
-
-func (q *Queries) LockStoreOversell(ctx context.Context, locationID int32) error {
-	_, err := q.db.Exec(ctx, lockStoreOversell, locationID)
-	return err
 }
 
 const pickOversellVictim = `-- name: PickOversellVictim :one

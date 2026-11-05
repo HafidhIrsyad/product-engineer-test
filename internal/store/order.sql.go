@@ -47,15 +47,20 @@ func (q *Queries) GetLocationByCode(ctx context.Context, code string) (Location,
 	return i, err
 }
 
-const getOrderIDByIdempotencyKey = `-- name: GetOrderIDByIdempotencyKey :one
-SELECT id FROM orders WHERE idempotency_key = $1
+const getOrderByIdempotencyKey = `-- name: GetOrderByIdempotencyKey :one
+SELECT id, request_hash FROM orders WHERE idempotency_key = $1
 `
 
-func (q *Queries) GetOrderIDByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, getOrderIDByIdempotencyKey, idempotencyKey)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+type GetOrderByIdempotencyKeyRow struct {
+	ID          int64
+	RequestHash []byte
+}
+
+func (q *Queries) GetOrderByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (GetOrderByIdempotencyKeyRow, error) {
+	row := q.db.QueryRow(ctx, getOrderByIdempotencyKey, idempotencyKey)
+	var i GetOrderByIdempotencyKeyRow
+	err := row.Scan(&i.ID, &i.RequestHash)
+	return i, err
 }
 
 const getOrderItems = `-- name: GetOrderItems :many
@@ -152,20 +157,26 @@ func (q *Queries) GetSKUsByCodes(ctx context.Context, codes []string) ([]GetSKUs
 }
 
 const insertOrder = `-- name: InsertOrder :one
-INSERT INTO orders (idempotency_key, channel, location_id, expires_at)
-VALUES ($1, $2, $3, now() + interval '15 minutes')
+INSERT INTO orders (idempotency_key, request_hash, channel, location_id, expires_at)
+VALUES ($1, $2, $3, $4, now() + interval '15 minutes')
 ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING id
 `
 
 type InsertOrderParams struct {
 	IdempotencyKey uuid.UUID
+	RequestHash    []byte
 	Channel        string
 	LocationID     int64
 }
 
 func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) (int64, error) {
-	row := q.db.QueryRow(ctx, insertOrder, arg.IdempotencyKey, arg.Channel, arg.LocationID)
+	row := q.db.QueryRow(ctx, insertOrder,
+		arg.IdempotencyKey,
+		arg.RequestHash,
+		arg.Channel,
+		arg.LocationID,
+	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -211,24 +222,30 @@ func (q *Queries) ListExpiredOrderIDs(ctx context.Context) ([]int64, error) {
 }
 
 const lockOrder = `-- name: LockOrder :one
-SELECT id, location_id, status FROM orders WHERE id = $1 FOR UPDATE
+SELECT id, location_id, status, paid_at FROM orders WHERE id = $1 FOR UPDATE
 `
 
 type LockOrderRow struct {
 	ID         int64
 	LocationID int64
 	Status     domain.OrderStatus
+	PaidAt     *time.Time
 }
 
 func (q *Queries) LockOrder(ctx context.Context, id int64) (LockOrderRow, error) {
 	row := q.db.QueryRow(ctx, lockOrder, id)
 	var i LockOrderRow
-	err := row.Scan(&i.ID, &i.LocationID, &i.Status)
+	err := row.Scan(
+		&i.ID,
+		&i.LocationID,
+		&i.Status,
+		&i.PaidAt,
+	)
 	return i, err
 }
 
 const payOrder = `-- name: PayOrder :execrows
-UPDATE orders SET status = 'PAID', updated_at = now()
+UPDATE orders SET status = 'PAID', paid_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at > now()
 `
 
@@ -238,6 +255,27 @@ func (q *Queries) PayOrder(ctx context.Context, id int64) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const reallocateOrder = `-- name: ReallocateOrder :exec
+UPDATE orders
+SET location_id = $1,
+    status      = $2,
+    expires_at  = now() + interval '15 minutes',
+    updated_at  = now()
+WHERE id = $3
+`
+
+type ReallocateOrderParams struct {
+	LocationID int64
+	Status     domain.OrderStatus
+	ID         int64
+}
+
+// Gives a lost order a new place and brings it back to the status it had: PAID if it was paid.
+func (q *Queries) ReallocateOrder(ctx context.Context, arg ReallocateOrderParams) error {
+	_, err := q.db.Exec(ctx, reallocateOrder, arg.LocationID, arg.Status, arg.ID)
+	return err
 }
 
 const setOrderStatus = `-- name: SetOrderStatus :exec

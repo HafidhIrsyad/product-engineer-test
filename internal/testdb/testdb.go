@@ -98,6 +98,20 @@ func AssertInvariants(t *testing.T, p *pgxpool.Pool) {
 		WHERE COALESCE(b.reserved, 0) <> COALESCE(r.qty, 0)`).Scan(&i2)
 	require.NoError(t, err)
 	require.Zero(t, i2, "I2 violated: reserved differs from open order quantities for %d (sku, location) pairs", i2)
+
+	var i3 int
+	err = p.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM stock_balance b
+		FULL OUTER JOIN (
+			SELECT sku_id, location_id, COUNT(*) AS cnt
+			FROM serial
+			WHERE level = 'UNIT' AND status = 'QUARANTINE'
+			GROUP BY sku_id, location_id
+		) s ON s.sku_id = b.sku_id AND s.location_id = b.location_id
+		WHERE COALESCE(b.quarantine, 0) <> COALESCE(s.cnt, 0)`).Scan(&i3)
+	require.NoError(t, err)
+	require.Zero(t, i3, "I3 violated: quarantine differs from the QUARANTINE unit count for %d (sku, location) pairs", i3)
 }
 
 // Store opens a store.Store on the same database as pool, without resetting it.
@@ -119,6 +133,18 @@ func InsertWarehouse(t *testing.T, p *pgxpool.Pool, code string) int64 {
 	err := p.QueryRow(context.Background(), `
 		INSERT INTO location (code, name, type, lat, lng, online_sellable)
 		VALUES ($1, $1, 'CENTRAL_WAREHOUSE', -6.2088, 106.8456, true)
+		RETURNING id`, code).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// InsertFactory creates a factory, where production batches are printed.
+func InsertFactory(t *testing.T, p *pgxpool.Pool, code string) int64 {
+	t.Helper()
+	var id int64
+	err := p.QueryRow(context.Background(), `
+		INSERT INTO location (code, name, type, lat, lng)
+		VALUES ($1, $1, 'FACTORY', -6.5950, 106.8166)
 		RETURNING id`, code).Scan(&id)
 	require.NoError(t, err)
 	return id

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,11 +25,11 @@ func move(t *testing.T, st *store.Store, id int64, from, to domain.SerialStatus)
 	})
 }
 
-func statusOf(t *testing.T, st *store.Store, id int64) domain.SerialStatus {
+func statusOf(t *testing.T, pool *pgxpool.Pool, id int64) domain.SerialStatus {
 	t.Helper()
-	row, err := st.GetSerialStatus(context.Background(), id)
-	require.NoError(t, err)
-	return row
+	var status domain.SerialStatus
+	require.NoError(t, pool.QueryRow(context.Background(), `SELECT status FROM serial WHERE id = $1`, id).Scan(&status))
+	return status
 }
 
 // T4: the whole lifecycle of one serial through the database, plus a stale read.
@@ -46,7 +47,7 @@ func TestIntegration_SerialLifecycle(t *testing.T) {
 	for i := 1; i < len(path); i++ {
 		require.NoError(t, move(t, st, id, path[i-1], path[i]), "%s → %s", path[i-1], path[i])
 	}
-	assert.Equal(t, domain.SerialVerified, statusOf(t, st, id))
+	assert.Equal(t, domain.SerialVerified, statusOf(t, pool, id))
 
 	rows, err := pool.Query(context.Background(), `SELECT from_status, to_status FROM serial_event WHERE serial_id = $1 ORDER BY id`, id)
 	require.NoError(t, err)
@@ -71,14 +72,14 @@ func TestIntegration_SerialLifecycle(t *testing.T) {
 		// The caller still believes the serial is IN_WAREHOUSE (a legal move to IN_TRANSIT), but it is VERIFIED now.
 		err := move(t, st, id, domain.SerialInWarehouse, domain.SerialInTransit)
 		assert.ErrorIs(t, err, domain.ErrStaleStatus)
-		assert.Equal(t, domain.SerialVerified, statusOf(t, st, id), "nothing changed")
+		assert.Equal(t, domain.SerialVerified, statusOf(t, pool, id), "nothing changed")
 	})
 
 	t.Run("a move outside the lifecycle is rejected before touching the database", func(t *testing.T) {
 		other, _ := testdb.InsertSerial(t, pool, testdb.SerialSpec{SKUID: sku, LocationID: loc, Status: "PRODUCED"})
 		assert.ErrorIs(t, move(t, st, other, domain.SerialProduced, domain.SerialSold), domain.ErrInvalidTransition)
 		assert.ErrorIs(t, move(t, st, id, domain.SerialVerified, domain.SerialInStock), domain.ErrInvalidTransition, "VERIFIED is final")
-		assert.Equal(t, domain.SerialProduced, statusOf(t, st, other))
+		assert.Equal(t, domain.SerialProduced, statusOf(t, pool, other))
 	})
 }
 

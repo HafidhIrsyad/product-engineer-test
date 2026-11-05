@@ -57,6 +57,54 @@ func (h *handler) payOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
+func (h *handler) fulfillOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := orderID(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	in := app.FulfillInput{OrderID: id}
+	if err := decodeBody(w, r, &in); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	for i, c := range in.SerialCodes {
+		code, err := domain.ParseSerialCode(c)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		in.SerialCodes[i] = string(code)
+	}
+	view, err := h.svc.FulfillOrder(r.Context(), in)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (h *handler) reallocateOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := orderID(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	var in struct {
+		LocationCode string `json:"location_code"`
+	}
+	if err := decodeBody(w, r, &in); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	view, err := h.svc.ReallocateOrder(r.Context(), id, in.LocationCode)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
 func (h *handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := orderID(r)
 	if err != nil {

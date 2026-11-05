@@ -61,6 +61,15 @@ func (h *handler) syncPOS(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
+func (h *handler) posGaps(w http.ResponseWriter, r *http.Request) {
+	gaps, err := h.svc.PosGaps(r.Context(), r.URL.Query().Get("store"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"gaps": gaps})
+}
+
 // Input limits at the trust boundary: nobody can make the server read or loop over unbounded input.
 const (
 	maxBodyBytes       = 1 << 20 // 1 MiB

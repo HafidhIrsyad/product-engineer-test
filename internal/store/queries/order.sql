@@ -4,12 +4,12 @@ SELECT * FROM location WHERE code = $1;
 -- name: GetSKUsByCodes :many
 SELECT id, code FROM sku WHERE code = ANY(sqlc.arg(codes)::text[]);
 
--- name: GetOrderIDByIdempotencyKey :one
-SELECT id FROM orders WHERE idempotency_key = $1;
+-- name: GetOrderByIdempotencyKey :one
+SELECT id, request_hash FROM orders WHERE idempotency_key = $1;
 
 -- name: InsertOrder :one
-INSERT INTO orders (idempotency_key, channel, location_id, expires_at)
-VALUES (sqlc.arg(idempotency_key), sqlc.arg(channel), sqlc.arg(location_id), now() + interval '15 minutes')
+INSERT INTO orders (idempotency_key, request_hash, channel, location_id, expires_at)
+VALUES (sqlc.arg(idempotency_key), sqlc.arg(request_hash), sqlc.arg(channel), sqlc.arg(location_id), now() + interval '15 minutes')
 ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING id;
 
@@ -30,13 +30,13 @@ WHERE oi.order_id = $1
 ORDER BY oi.sku_id;
 
 -- name: LockOrder :one
-SELECT id, location_id, status FROM orders WHERE id = $1 FOR UPDATE;
+SELECT id, location_id, status, paid_at FROM orders WHERE id = $1 FOR UPDATE;
 
 -- name: SetOrderStatus :exec
 UPDATE orders SET status = sqlc.arg(status), updated_at = now() WHERE id = sqlc.arg(id);
 
 -- name: PayOrder :execrows
-UPDATE orders SET status = 'PAID', updated_at = now()
+UPDATE orders SET status = 'PAID', paid_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at > now();
 
 -- name: ListExpiredOrderIDs :many
@@ -46,3 +46,12 @@ SELECT id FROM orders WHERE status = 'PENDING_PAYMENT' AND expires_at < now() OR
 UPDATE orders SET status = 'EXPIRED', updated_at = now()
 WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at < now()
 RETURNING location_id;
+
+-- name: ReallocateOrder :exec
+-- Gives a lost order a new place and brings it back to the status it had: PAID if it was paid.
+UPDATE orders
+SET location_id = sqlc.arg(location_id),
+    status      = sqlc.arg(status),
+    expires_at  = now() + interval '15 minutes',
+    updated_at  = now()
+WHERE id = sqlc.arg(id);

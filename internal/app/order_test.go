@@ -42,6 +42,27 @@ func input(key uuid.UUID, items ...app.OrderItem) app.CreateOrderInput {
 }
 
 // runTogether starts n goroutines that all begin at the same moment.
+// The same Idempotency-Key with a different request is refused; the same request in another item order is a replay.
+func TestIntegration_CreateOrder_KeyReusedWithDifferentRequest(t *testing.T) {
+	f := newFixture(t, map[string]int{"MGN-PROT-500": 5, "MGN-COLL-200": 5})
+	ctx := context.Background()
+	key := uuid.New()
+	a, b := app.OrderItem{SKUCode: "MGN-PROT-500", Qty: 1}, app.OrderItem{SKUCode: "MGN-COLL-200", Qty: 2}
+
+	first, created, err := f.svc.CreateOrder(ctx, input(key, a, b))
+	require.NoError(t, err)
+	require.True(t, created)
+
+	again, created, err := f.svc.CreateOrder(ctx, input(key, b, a))
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.Equal(t, first.ID, again.ID, "the same request in another item order is a replay")
+
+	_, _, err = f.svc.CreateOrder(ctx, input(key, app.OrderItem{SKUCode: "MGN-PROT-500", Qty: 3}))
+	assert.ErrorIs(t, err, domain.ErrIdempotencyKeyReused)
+	testdb.AssertInvariants(t, f.pool)
+}
+
 func runTogether(n int, fn func(i int)) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup

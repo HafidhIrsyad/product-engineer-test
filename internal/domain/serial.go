@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"crypto/rand"
 	"fmt"
 	"slices"
 	"strings"
@@ -54,6 +55,16 @@ const (
 	serialCodePrefix   = "MG"
 	crockfordAlphabets = "0123456789ABCDEFGHJKMNPQRSTVWXYZ" // no I, L, O, U
 )
+
+// NewSerialCode returns a random code: MG plus 11 Crockford characters (55 bits, not sequential).
+func NewSerialCode() SerialCode {
+	b := make([]byte, serialCodeLen-len(serialCodePrefix))
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error
+	for i := range b {
+		b[i] = crockfordAlphabets[b[i]%32] // 256 is a multiple of 32, so every character is equally likely
+	}
+	return SerialCode(serialCodePrefix + string(b))
+}
 
 // ParseSerialCode normalizes (trim, upper-case) and validates a scanned code.
 func ParseSerialCode(raw string) (SerialCode, error) {

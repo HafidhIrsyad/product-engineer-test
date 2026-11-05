@@ -16,6 +16,15 @@ var (
 	ErrInvalidOrderStatus  = errors.New("invalid order status")
 	ErrOrderNotCancellable = errors.New("order not cancellable")
 
+	ErrBatchExists    = errors.New("batch code already exists")
+	ErrSerialNotFound = errors.New("serial not found")
+
+	ErrMixedContainer = errors.New("container holds serials in different statuses or locations")
+	ErrWrongLocation  = errors.New("container is not at this location")
+
+	ErrIdempotencyKeyReused = errors.New("idempotency key already used for a different request")
+	ErrDataInconsistent     = errors.New("stored data is inconsistent")
+
 	ErrInvalidTransition = errors.New("invalid status transition")
 
 	ErrStaleStatus = errors.New("status changed by another process")

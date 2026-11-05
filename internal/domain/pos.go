@@ -86,10 +86,11 @@ const (
 type PosRejection string
 
 const (
-	RejectInvalidPayload PosRejection = "INVALID_PAYLOAD"
-	RejectUnknownSKU     PosRejection = "UNKNOWN_SKU"
-	RejectIDReused       PosRejection = "ID_REUSED_WITH_DIFFERENT_PAYLOAD"
-	RejectLocalSeqReused PosRejection = "LOCAL_SEQ_REUSED"
+	RejectInvalidPayload   PosRejection = "INVALID_PAYLOAD"
+	RejectUnknownSKU       PosRejection = "UNKNOWN_SKU"
+	RejectIDReused         PosRejection = "ID_REUSED_WITH_DIFFERENT_PAYLOAD"
+	RejectLocalSeqReused   PosRejection = "LOCAL_SEQ_REUSED"
+	RejectDataInconsistent PosRejection = "DATA_INCONSISTENT"
 )
 
 func (t PosTxn) Validate() error {

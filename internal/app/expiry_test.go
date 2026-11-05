@@ -97,10 +97,14 @@ func TestIntegration_ExpireDue_Concurrent(t *testing.T) {
 // T15: paying and expiring the same order at the same time. Either side may win, but an order is
 // never PAID without its reservation, and PAID means the payment really succeeded.
 func TestIntegration_PayVsExpiry(t *testing.T) {
-	f := newFixture(t, map[string]int{"MGN-PROT-500": 40})
+	const maxRounds = 200
+	f := newFixture(t, map[string]int{"MGN-PROT-500": maxRounds})
 	ctx := context.Background()
 
-	for range 20 {
+	// Keep racing until both outcomes have happened at least 3 times: a test that only ever sees
+	// one side would pass without proving anything.
+	paid, expired := 0, 0
+	for round := 0; round < maxRounds && (paid < 3 || expired < 3); round++ {
 		o := f.newOrder(t, 1)
 		f.expireAt(t, o.ID, `now() + interval '30 milliseconds'`)
 
@@ -126,12 +130,16 @@ func TestIntegration_PayVsExpiry(t *testing.T) {
 
 		switch status := f.orderStatus(t, o.ID); status {
 		case "PAID":
+			paid++
 			assert.NoError(t, payErr, "PAID means the payment succeeded")
 		case "EXPIRED":
+			expired++
 			assert.ErrorIs(t, payErr, domain.ErrOrderExpired, "an expired order cannot have been paid")
 		default:
 			t.Fatalf("order ended as %s, want PAID or EXPIRED", status)
 		}
 	}
+	assert.GreaterOrEqual(t, paid, 3, "the race never went the way of payment")
+	assert.GreaterOrEqual(t, expired, 3, "the race never went the way of expiry")
 	testdb.AssertInvariants(t, f.pool) // reserved = open orders: PAID keeps its stock, EXPIRED gave it back
 }
