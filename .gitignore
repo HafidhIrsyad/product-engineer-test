@@ -1,0 +1,10 @@
+# Local config (copy from config.example.yaml)
+config.yaml
+
+# Private working files, not part of the public repo
+implementation-notes.md
+*.pdf
+*.diff
+
+# Build output
+/bin/

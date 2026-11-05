@@ -1,0 +1,19 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "internal/store/migrations"   # sqlc reads the "+goose Up" part
+    queries: "internal/store/queries"
+    gen:
+      go:
+        package: "store"
+        out: "internal/store"             # same package as the hand-written store code
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          # PostgreSQL enums map straight to domain types (no duplicate types).
+          # Add each one together with its domain type, for example:
+          # - db_type: "serial_status"
+          #   go_type: "github.com/HafidhIrsyad/product-engineer-test/internal/domain.SerialStatus"

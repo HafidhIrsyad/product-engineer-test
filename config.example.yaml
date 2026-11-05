@@ -1,0 +1,12 @@
+# Copy to config.yaml for `make run`. Environment variables MGMI_* override these values.
+app:
+  env: local            # local = console logs + SQL query logs
+http:
+  port: 8080
+  request_timeout: 10s
+database:
+  url: postgres://mgmi:mgmi@localhost:5432/mgmi?sslmode=disable
+log:
+  level: debug          # debug so SQL query logs are visible
+sweeper:
+  interval: 30s
