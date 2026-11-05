@@ -123,6 +123,15 @@ Frontend / aplikasi POS, dashboard visual, CouchDB/RxDB, Redis, message queue, m
 
 Alasan: tidak diminta assignment. Setiap komponen tambahan menambah risiko waktu tanpa menambah nilai pada rubrik. Batasan ini ditulis eksplisit sebagai bagian dari *product thinking*.
 
+### 2.4 Asumsi: alokasi stok ditentukan di hulu
+
+`stock_balance` per (SKU, lokasi) dianggap **sudah merupakan alokasi**: berapa unit yang ada di gudang pusat, hub, atau toko diputuskan oleh sistem hulu (di perusahaan yang matang biasanya ERP, yang membagi stok setiap pagi ke gudang, toko, dan kanal online). Sistem ini **tidak membagi stok antar kanal**; tugasnya menjaga angka itu tetap benar di bawah konkurensi dan saat internet toko padam. Konsekuensinya:
+
+- Stok pusat tidak diperebutkan lintas lokasi: order memilih satu lokasi (§12.2), dan di satu lokasi hanya `UPDATE` bersyarat yang menentukan.
+- Satu-satunya stok yang dipakai bersama oleh dua dunia adalah **stok toko**, yang dipakai kasir dan toko online-nya. Di situlah konflik Kasus 4 terjadi, dan di situ pula pengamannya dipasang: `online_buffer`, heartbeat per perangkat, stok toko hanya untuk D2C, dan aturan fakta fisik menang (§13.5).
+- Tidak semua toko punya toko online: `location.online_sellable` menentukan apakah stok sebuah lokasi boleh dijual online sama sekali.
+- **Jalur evolusi** (tidak dibangun): jatah per kanal per lokasi (`allocation(sku, location, channel, qty)`), sehingga marketplace boleh memakai stok toko dalam jatahnya, dan kasir tahu jatahnya lewat heartbeat. Itu memindahkan konflik dari "diselesaikan setelah terjadi" ke "tidak bisa terjadi di dalam jatah", dengan harga stok yang bisa terjebak di satu kanal.
+
 ---
 
 ## 3. Prinsip Desain

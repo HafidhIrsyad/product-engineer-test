@@ -350,6 +350,7 @@ Jam perangkat tidak dipakai untuk menentukan siapa yang lebih dulu, karena jam p
 | Trade-off | Dampak | Cara menyetel |
 |---|---|---|
 | Buffer online | Sebagian unit tidak dijual online | Setel per toko dari data konflik (lihat metrik) |
+| Alokasi stok dianggap sudah diputuskan di hulu (`ARCHITECTURE.md` §2.4) | Sistem ini tidak membagi stok antar kanal, hanya menjaganya | Jalur evolusi: jatah per kanal per lokasi, sehingga marketplace boleh memakai stok toko dalam jatahnya dan kasir tahu jatahnya lewat heartbeat; harganya stok yang bisa terjebak di satu kanal |
 | Satu perangkat bermasalah menahan stok toko dari online | Penjualan online toko itu berhenti sampai ops menonaktifkan perangkatnya | Lebih baik daripada konflik yang tidak terlihat |
 | Jendela 5 menit | Konflik masih mungkin dalam 5 menit pertama offline | Lebih pendek = lebih sedikit konflik, tetapi toko lebih sering hilang dari online karena gangguan singkat |
 | Satu order dilepas utuh (semua item) | Pelanggan kehilangan item lain di order yang sama | Sederhana dan jelas untuk pembeli; split order di luar scope |
