@@ -1,6 +1,5 @@
 package domain
 
-// MovementReason explains why a stock counter changed (ledger, §11).
 type MovementReason string
 
 const (
@@ -15,7 +14,6 @@ const (
 	MovementReleaseQuarantine MovementReason = "RELEASE_QUARANTINE"
 )
 
-// LocationType is where stock can be (§7).
 type LocationType string
 
 const (

@@ -41,8 +41,6 @@ type OrderView struct {
 // errReplay: another request with the same Idempotency-Key committed first.
 var errReplay = errors.New("idempotency key already used")
 
-// CreateOrder reserves stock and creates the order in one transaction (§12.2, §16.3).
-// created is false when the Idempotency-Key was already used: the existing order is returned.
 func (s *Service) CreateOrder(ctx context.Context, in CreateOrderInput) (view OrderView, created bool, err error) {
 	if id, err := s.store.GetOrderIDByIdempotencyKey(ctx, in.IdempotencyKey); err == nil {
 		view, err := loadView(ctx, s.store.Queries, id)
@@ -96,8 +94,6 @@ func (s *Service) CreateOrder(ctx context.Context, in CreateOrderInput) (view Or
 	return view, true, err
 }
 
-// stockLines resolves SKU codes and sorts the lines by sku_id, so every transaction
-// locks stock rows in the same order (§12.4).
 func (s *Service) stockLines(ctx context.Context, items []OrderItem) ([]stockLine, error) {
 	codes := make([]string, len(items))
 	for i, it := range items {
@@ -128,8 +124,6 @@ func (s *Service) GetOrder(ctx context.Context, id int64) (OrderView, error) {
 	return loadView(ctx, s.store.Queries, id)
 }
 
-// PayOrder marks an order paid (mock payment). One conditional UPDATE decides, so it cannot
-// pay an order that expired or was cancelled meanwhile (§12.7).
 func (s *Service) PayOrder(ctx context.Context, id int64) (OrderView, error) {
 	n, err := s.store.PayOrder(ctx, id)
 	if err != nil {
@@ -152,8 +146,6 @@ func (s *Service) PayOrder(ctx context.Context, id int64) (OrderView, error) {
 	}
 }
 
-// CancelOrder cancels an order and releases its stock, under a row lock (§12.5).
-// Cancelling twice, or racing with itself, releases stock only once.
 func (s *Service) CancelOrder(ctx context.Context, id int64) (OrderView, error) {
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
 		o, err := q.LockOrder(ctx, id)

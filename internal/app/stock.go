@@ -11,10 +11,6 @@ import (
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
 )
 
-// stock.go is the ONLY place that changes stock_balance (ARCHITECTURE.md §11.3).
-// Every change updates the counter and writes the same delta to the ledger, inside the
-// caller's transaction. Lines must already be sorted by sku_id (lock order, §12.4).
-
 type stockLine struct {
 	skuID int64
 	qty   int32
@@ -68,8 +64,6 @@ func release(ctx context.Context, q *store.Queries, orderID, locationID int64, l
 	return nil
 }
 
-// sellPOS takes physical units out of a store for a cashier sale. The units are real,
-// so there is no availability check: a shortage against reservations is resolved afterwards (§13.5).
 func sellPOS(ctx context.Context, q *store.Queries, txnID uuid.UUID, locationID int64, lines []stockLine) error {
 	for _, l := range lines {
 		n, err := q.DecreaseOnHand(ctx, store.DecreaseOnHandParams{Qty: l.qty, SkuID: l.skuID, LocationID: locationID})
@@ -77,8 +71,6 @@ func sellPOS(ctx context.Context, q *store.Queries, txnID uuid.UUID, locationID 
 			return err
 		}
 		if n == 0 {
-			// A valid serial is IN_STOCK here, so a stock_balance row must exist (invariant I1).
-			// This is a data bug, not a business outcome: it is a 500, never "insufficient stock".
 			return fmt.Errorf("sale: no stock_balance row for sku %d at location %d: invariant I1 broken", l.skuID, locationID)
 		}
 		m := movement{locationID: locationID, deltaOnHand: -l.qty, reason: domain.MovementSalePOS, refType: "POS_TXN", refID: txnID.String()}

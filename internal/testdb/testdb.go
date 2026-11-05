@@ -1,4 +1,3 @@
-// Package testdb gives integration tests a real, migrated, empty PostgreSQL (ARCHITECTURE.md §18.3).
 package testdb
 
 import (
@@ -24,9 +23,6 @@ var (
 	initErr error
 )
 
-// Pool returns a connection to a real PostgreSQL that has been migrated and emptied.
-// The container starts once per test package and is removed by testcontainers when the
-// test process exits. In -short mode the test is skipped; without Docker it fails.
 func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if testing.Short() {
@@ -70,10 +66,6 @@ func reset(t *testing.T, p *pgxpool.Pool) {
 	require.NoError(t, err, "reset database")
 }
 
-// AssertInvariants checks the stock invariants of ARCHITECTURE.md §11.2:
-//
-//	I1: on_hand  = number of UNIT serials at the location in IN_WAREHOUSE, IN_STOCK or QUARANTINE
-//	I2: reserved = sum of order_item.qty of PENDING_PAYMENT / PAID orders at the location
 func AssertInvariants(t *testing.T, p *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
@@ -155,8 +147,6 @@ func InsertStore(t *testing.T, p *pgxpool.Pool, code string, buffer int) int64 {
 	return id
 }
 
-// SetStock puts n physical units in a warehouse: n UNIT serials in IN_WAREHOUSE plus the
-// matching on_hand counter, so invariant I1 holds. It returns the serial codes.
 func SetStock(t *testing.T, p *pgxpool.Pool, skuID, locationID int64, n int) []string {
 	t.Helper()
 	return SetStockAs(t, p, skuID, locationID, n, "IN_WAREHOUSE")
@@ -187,8 +177,6 @@ type SerialSpec struct {
 	PartnerID         *int64
 }
 
-// InsertSerial inserts one serial with a unique code and returns its id and code.
-// It does not touch stock_balance: use SetStockAs when the counter must match.
 func InsertSerial(t *testing.T, p *pgxpool.Pool, sp SerialSpec) (int64, string) {
 	t.Helper()
 	if sp.Status == "" {

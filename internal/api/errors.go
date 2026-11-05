@@ -18,8 +18,6 @@ type errorDetail struct {
 	Message string `json:"message"`
 }
 
-// classify is the ONLY place where domain errors become HTTP status codes (ARCHITECTURE.md §16.1).
-// Anything it does not know is a bug or an infrastructure failure: 500 (Die).
 func classify(err error) (status int, code string) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidInput):

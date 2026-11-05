@@ -1,5 +1,4 @@
 -- name: GetSerialForVerify :one
--- Locks the serial so two first scans cannot both count as "first" (ARCHITECTURE.md §10.2).
 SELECT s.id, s.status, s.location_id, s.partner_id, s.first_verified_at,
        k.code AS sku_code, k.name AS sku_name,
        b.code AS batch_code, b.expires_on,
@@ -20,9 +19,6 @@ ORDER BY scanned_at DESC, id DESC
 LIMIT 1;
 
 -- name: CountOtherScanDevices :one
--- Devices that scanned this unit AFTER it was sold. Shelf scans before the sale are what careful
--- shoppers do (PRODUCT_DEFENSE.md principle 1), so they never count towards a warning. A unit with
--- no sale event (e.g. stock at a partner, whose sales we do not see) therefore never warns by count.
 SELECT COUNT(DISTINCT se.device_id)::int FROM scan_event se
 WHERE se.serial_id = sqlc.arg(serial_id) AND se.device_id <> sqlc.arg(device_id)
   AND se.scanned_at >= COALESCE(
@@ -37,9 +33,6 @@ INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict, scann
 VALUES (sqlc.arg(serial_id), sqlc.arg(raw_code), sqlc.arg(device_id), sqlc.arg(lat), sqlc.arg(lng), sqlc.arg(verdict), sqlc.arg(scanned_at));
 
 -- name: LeakageByPallet :many
--- Pallets whose scanned units turn up outside the distributor's region (ARCHITECTURE.md §8.4).
--- The threshold is relative to scan coverage: at least min_units AND at least min_ratio of the
--- pallet's scanned units.
 WITH unit_pallet AS (
     SELECT u.id AS serial_id, u.partner_id, pal.code AS pallet
     FROM serial u

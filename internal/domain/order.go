@@ -1,6 +1,5 @@
 package domain
 
-// OrderStatus is the lifecycle state of an online order (§12.1).
 type OrderStatus string
 
 const (
@@ -12,7 +11,6 @@ const (
 	OrderNeedsReallocation OrderStatus = "NEEDS_REALLOCATION"
 )
 
-// Channel is the sales channel of an online order. Store stock is only for D2C (§12.3).
 type Channel string
 
 const (

@@ -9,7 +9,6 @@ import (
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
 )
 
-// VerifyInput is one consumer scan (ARCHITECTURE.md §10.1). Lat and Lng come together or not at all.
 type VerifyInput struct {
 	Code     domain.SerialCode `json:"code"`
 	DeviceID string            `json:"device_id"`
@@ -17,8 +16,6 @@ type VerifyInput struct {
 	Lng      *float64          `json:"lng"`
 }
 
-// VerifyView is what the consumer sees. Which rule raised a warning is never shown: a forger
-// must not learn the rules. That detail is only in the anomaly table.
 type VerifyView struct {
 	Verdict         domain.Verdict `json:"verdict"`
 	Message         string         `json:"message,omitempty"`
@@ -43,9 +40,6 @@ const (
 	messageWarning  = "Produk ini asli, tetapi ada hal yang tidak biasa pada kodenya (misalnya sudah pernah dipindai di tempat lain). Jika Anda baru membeli produk ini, hubungi layanan pelanggan."
 )
 
-// Verify checks a scanned code and records the scan (§10.2, §16.2). Scanning never changes
-// stock and never changes the status of a unit in a shelf: only the first scan after the sale
-// moves SOLD to VERIFIED.
 func (s *Service) Verify(ctx context.Context, in VerifyInput) (VerifyView, error) {
 	at := time.Now() // one clock for every scan time, stored and compared, so rule R1 never mixes two clocks
 	var view VerifyView
@@ -94,8 +88,6 @@ func (s *Service) Verify(ctx context.Context, in VerifyInput) (VerifyView, error
 	return view, err
 }
 
-// scanContext gathers what the pure rules need: the previous scan from another device,
-// how many devices scanned this code, and the distributor's region.
 func scanContext(ctx context.Context, q *store.Queries, row store.GetSerialForVerifyRow, in VerifyInput, at time.Time) (verifyScan, error) {
 	out := verifyScan{ScanInput: domain.ScanInput{Status: row.Status, At: at}}
 	if in.Lat != nil && in.Lng != nil {

@@ -9,9 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// PosTxn is one cashier transaction recorded on a POS device, possibly while offline (§13.2).
-// ID is created on the device when the sale is made and is the idempotency key.
-// The JSON tags match the sync request body; api decodes straight into this type.
 type PosTxn struct {
 	ID            uuid.UUID `json:"id"`
 	LocalSeq      int64     `json:"local_seq"`
@@ -45,10 +42,6 @@ type canonicalItem struct {
 	Price      int64  `json:"price"`
 }
 
-// PayloadHash returns the SHA-256 of the canonical form of a transaction (§13.4).
-// It is computed from the decoded struct, not the raw body, so field order, spacing and the
-// time-zone offset of a retried request do not matter. The same UUID with a different hash
-// means a device bug: the transaction is REJECTED.
 func PayloadHash(t PosTxn) []byte {
 	c := canonicalTxn{
 		ID:            t.ID.String(),
@@ -70,7 +63,6 @@ func PayloadHash(t PosTxn) []byte {
 	return sum[:]
 }
 
-// PosStatus is the result reported per transaction in a sync response (§13.2).
 type PosStatus string
 
 const (
@@ -80,8 +72,6 @@ const (
 	PosRejected           PosStatus = "REJECTED"
 )
 
-// PosIssue is why a scanned serial is not a valid sale at this store. The sale is still
-// recorded: money was taken and the unit left the shelf (§13.2).
 type PosIssue string
 
 const (
@@ -102,8 +92,6 @@ const (
 	RejectLocalSeqReused PosRejection = "LOCAL_SEQ_REUSED"
 )
 
-// Validate checks a transaction is technically well formed. Problems with the serials themselves
-// are not checked here: they never reject a sale (see PosIssue).
 func (t PosTxn) Validate() error {
 	switch {
 	case t.ID == uuid.Nil:
@@ -133,8 +121,6 @@ type SerialSnapshot struct {
 	Status     SerialStatus
 }
 
-// ClassifyPosItem decides whether a scanned serial is a valid sale at a store (§13.3).
-// A nil snapshot means the code is not in the database. It returns "" when valid.
 func ClassifyPosItem(s *SerialSnapshot, wantSKUID, storeID int64) PosIssue {
 	switch {
 	case s == nil:

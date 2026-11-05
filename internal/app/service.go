@@ -1,5 +1,3 @@
-// Package app holds the use cases. Each use case opens one database transaction per
-// business operation and returns domain errors (ARCHITECTURE.md §4.2, §16).
 package app
 
 import (

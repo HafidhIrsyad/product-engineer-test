@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// Verdict is what the consumer sees after scanning a QR (§10.4).
 type Verdict string
 
 const (
@@ -15,8 +14,6 @@ const (
 	VerdictNotFound           Verdict = "NOT_FOUND"
 )
 
-// AnomalyType is a finding for humans to review; it is stored in the anomaly table.
-// Unknown codes (R0) are NOT anomalies: they are only logged in scan_event (§10.3).
 type AnomalyType string
 
 const (
@@ -27,7 +24,6 @@ const (
 	AnomalyOverSold          AnomalyType = "OVERSOLD"
 )
 
-// Thresholds (ARCHITECTURE.md §10.3, §19).
 const (
 	// An impossible-travel scan needs both: farther than this AND faster than a commercial flight.
 	ImpossibleTravelMinKm = 100.0
@@ -54,21 +50,16 @@ func HaversineKm(a, b Point) float64 {
 
 func toRad(deg float64) float64 { return deg * math.Pi / 180 }
 
-// Region is a distributor's official region, simplified to a circle (§10.5).
 type Region struct {
 	Center   Point
 	RadiusKm float64
 }
 
-// PreviousScan is the latest scan of the same code made by ANOTHER device.
-// Location is nil when the browser did not share one.
 type PreviousScan struct {
 	At       time.Time
 	Location *Point
 }
 
-// ScanInput is everything the rules need about one scan of a known serial.
-// Location and Region are nil when unknown, which skips R1 and R3 (§10.5).
 type ScanInput struct {
 	Status          SerialStatus
 	At              time.Time
@@ -84,7 +75,6 @@ type Result struct {
 	Anomalies []AnomalyType
 }
 
-// Evaluate runs rules R1–R3 and decides the verdict for a known serial (§10.3–10.4).
 func Evaluate(in ScanInput) Result {
 	var anomalies []AnomalyType
 	if impossibleTravel(in) {
@@ -102,8 +92,6 @@ func Evaluate(in ScanInput) Result {
 	}
 }
 
-// DecideVerdict applies §10.4: an unknown code is NOT_FOUND; R1, R2, R3, or a code scanned by
-// WarnDistinctDevices or more devices gives a warning; otherwise GENUINE.
 func DecideVerdict(found bool, anomalies []AnomalyType, distinctDevices int) Verdict {
 	switch {
 	case !found:

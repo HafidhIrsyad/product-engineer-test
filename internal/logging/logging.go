@@ -1,5 +1,3 @@
-// Package logging sets up zerolog, the HTTP request log middleware, and the SQL query tracer
-// (ARCHITECTURE.md §5.2). Every log line during a request carries the same request_id.
 package logging
 
 import (
@@ -31,8 +29,6 @@ func New(local bool, level string) (zerolog.Logger, error) {
 	return logger, nil
 }
 
-// Middleware logs every request twice: when it arrives and when the response is complete.
-// It must wrap the recoverer so a panic is still logged as a completed 500.
 func Middleware(base zerolog.Logger) []func(http.Handler) http.Handler {
 	return []func(http.Handler) http.Handler{
 		hlog.NewHandler(base),
@@ -60,8 +56,6 @@ func requestCompleted(r *http.Request, status, size int, duration time.Duration)
 		Msg("request completed")
 }
 
-// SQLTracer logs every pgx/sqlc query to zerolog at debug level (errors at error level).
-// Install it only when local: args contain real parameter values, which may be personal data.
 func SQLTracer() pgx.QueryTracer {
 	return &tracelog.TraceLog{
 		Logger:   tracelog.LoggerFunc(logSQL),

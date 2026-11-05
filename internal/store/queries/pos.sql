@@ -6,9 +6,6 @@ ON CONFLICT (id) DO UPDATE SET last_heartbeat_at = now()
 WHERE pos_device.store_id = EXCLUDED.store_id;
 
 -- name: InsertPosTransaction :execrows
--- ON CONFLICT DO NOTHING (no target) covers BOTH unique keys: the transaction id (a retry) and
--- (device_id, local_seq) (a device bug). A conflict inserts nothing, so the transaction stays usable.
--- A concurrent insert of the same id waits for the first to commit, then does nothing.
 INSERT INTO pos_transaction (id, store_id, device_id, local_seq, occurred_at, payload_hash, total_amount, payment_method, result)
 VALUES (
     sqlc.arg(id), sqlc.arg(store_id), sqlc.arg(device_id), sqlc.arg(local_seq), sqlc.arg(occurred_at),
@@ -27,7 +24,6 @@ INSERT INTO pos_transaction_item (pos_transaction_id, line_no, serial_code, seri
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: LockSerialsByCodes :many
--- One query, ORDER BY id: serials are always locked in id order (ARCHITECTURE.md §12.4).
 SELECT id, code, level, sku_id, location_id, status
 FROM serial
 WHERE code = ANY(sqlc.arg(codes)::text[])
@@ -35,8 +31,6 @@ ORDER BY id
 FOR UPDATE;
 
 -- name: TransitionSerial :one
--- No row (ErrNoRows) = the status changed since it was read (§9.3).
--- The first move to VERIFIED also stamps first_verified_at.
 UPDATE serial
 SET status = sqlc.arg(to_status)::serial_status,
     first_verified_at = CASE WHEN sqlc.arg(to_status)::serial_status = 'VERIFIED' THEN now() ELSE first_verified_at END,
@@ -58,23 +52,15 @@ UPDATE stock_balance SET on_hand = on_hand - sqlc.arg(qty)::int, updated_at = no
 WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id);
 
 -- name: LockStoreOversell :exec
--- Only one oversell resolution per store at a time (§13.5). Held until the transaction ends.
--- Two-key form (class 1001, store id) so it cannot collide with another advisory lock user.
 SELECT pg_advisory_xact_lock(1001, sqlc.arg(location_id)::int);
 
 -- name: GetShortfall :one
--- Positive when more is reserved than physically available. FOR UPDATE: called after the order is
--- locked (lock order orders, then stock_balance), so a cancel that committed meanwhile is seen.
 SELECT (reserved - (on_hand - quarantine))::int AS shortfall
 FROM stock_balance
 WHERE sku_id = sqlc.arg(sku_id) AND location_id = sqlc.arg(location_id)
 FOR UPDATE;
 
 -- name: PickOversellVictim :one
--- The order that loses its stock: an UNPAID order before a paid one, then the newest (§13.5).
--- A customer who already paid is the last to lose. Not locked here: SELECT ... LIMIT 1
--- FOR UPDATE returns no row when the candidate is cancelled while waiting for the lock, even if other
--- candidates exist. The caller locks the order and re-checks its status instead.
 SELECT o.id
 FROM orders o
 JOIN order_item oi ON oi.order_id = o.id AND oi.sku_id = sqlc.arg(sku_id)
@@ -87,8 +73,6 @@ LIMIT 1;
 SELECT status FROM serial WHERE id = $1;
 
 -- name: ListOversold :many
--- Store stock where more is reserved than physically there: left over if a sync failed after its
--- sale was recorded and the device never resent it (§13.5). Re-checked under locks before acting.
 SELECT sb.location_id, sb.sku_id
 FROM stock_balance sb
 JOIN location l ON l.id = sb.location_id

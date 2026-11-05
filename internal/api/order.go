@@ -71,7 +71,6 @@ func (h *handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
-// decodeCreateOrder is the trust boundary: raw request → validated app input (ARCHITECTURE.md §16.1).
 func decodeCreateOrder(w http.ResponseWriter, r *http.Request) (app.CreateOrderInput, error) {
 	var in app.CreateOrderInput
 

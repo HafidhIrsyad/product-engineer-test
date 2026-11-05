@@ -39,8 +39,6 @@ func (h *handler) syncPOS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	// Only the envelope is checked here. A malformed transaction is REJECTED on its own, so one
-	// bad transaction never blocks the rest of the batch (ARCHITECTURE.md §13.2).
 	if in.StoreCode == "" || in.DeviceID == "" || len(in.Transactions) == 0 {
 		writeError(w, r, fmt.Errorf("%w: store_code, device_id and at least one transaction are required", domain.ErrInvalidInput))
 		return

@@ -22,7 +22,6 @@ func (h *handler) verify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view) // NOT_FOUND is a normal answer, not an error
 }
 
-// decodeVerify is the trust boundary: raw request → validated input (ARCHITECTURE.md §16.2).
 func decodeVerify(w http.ResponseWriter, r *http.Request) (app.VerifyInput, error) {
 	var in app.VerifyInput
 	if err := decodeBody(w, r, &in); err != nil {

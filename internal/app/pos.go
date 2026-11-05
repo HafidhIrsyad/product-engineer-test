@@ -15,7 +15,6 @@ import (
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
 )
 
-// SyncPOSInput is the body of POST /v1/pos/sync (ARCHITECTURE.md §13.2).
 type SyncPOSInput struct {
 	StoreCode    string          `json:"store_code"`
 	DeviceID     string          `json:"device_id"`
@@ -37,8 +36,6 @@ type PosItemIssue struct {
 	Issue  domain.PosIssue `json:"issue"`
 }
 
-// Heartbeat records that a POS device is online. A store is sold online only while every
-// active device of the store has a fresh heartbeat (§13.6).
 func (s *Service) Heartbeat(ctx context.Context, storeCode, deviceID string) error {
 	loc, err := s.posStore(ctx, storeCode)
 	if err != nil {
@@ -59,21 +56,11 @@ func (s *Service) touchDevice(ctx context.Context, storeID int64, deviceID strin
 	return nil
 }
 
-// SyncPOS records offline cashier transactions (§13.3, §16.5). Two stages:
-//   - Tx1, one transaction per POS transaction, in local_seq order: record the sale, mark serials
-//     sold, take stock. A bad transaction never fails the batch.
-//   - Tx2, afterwards, per SKU in the batch: resolve any oversell against online reservations.
-//
-// They are separate so every transaction follows the global lock order (§12.4).
-// Results come back in local_seq order. A retried batch is safe: finished transactions become
-// DUPLICATE, and Tx2 runs again for every SKU, including those of duplicates.
 func (s *Service) SyncPOS(ctx context.Context, in SyncPOSInput) ([]PosResult, error) {
 	loc, err := s.posStore(ctx, in.StoreCode)
 	if err != nil {
 		return nil, err
 	}
-	// A sync proves the device is online, and ties it to this store: a device belongs to one store,
-	// and one that never sent a heartbeat is still counted when deciding if the store is online (§13.6).
 	if err := s.touchDevice(ctx, loc.ID, in.DeviceID); err != nil {
 		return nil, err
 	}
@@ -186,9 +173,6 @@ func (s *Service) skuIDsByCode(ctx context.Context, items []domain.PosItem) (map
 	return ids, nil
 }
 
-// recordSale writes a new transaction: items, serial changes, anomalies, and stock.
-// Lock order: serial, then stock_balance (§12.4). Stock is taken only for valid serials,
-// so on_hand always equals the number of serials in the store (invariant I1).
 func recordSale(ctx context.Context, q *store.Queries, loc store.Location, t domain.PosTxn, skuIDs map[string]int64) (PosResult, error) {
 	codes := make([]string, len(t.Items))
 	for i, it := range t.Items {
@@ -276,9 +260,6 @@ func recordMismatch(ctx context.Context, q *store.Queries, storeID int64, txnID 
 	})
 }
 
-// resolveOversell is Tx2 for one SKU of one store (§13.5). While more is reserved than is
-// physically there, the newest open order holding the SKU loses its reservation. One
-// transaction per order: lock order is advisory lock, then orders, then stock_balance.
 func (s *Service) resolveOversell(ctx context.Context, storeID, skuID int64) error {
 	for {
 		more := false
@@ -301,8 +282,6 @@ func (s *Service) resolveOversell(ctx context.Context, storeID, skuID int64) err
 			if o.Status != domain.OrderPendingPayment && o.Status != domain.OrderPaid {
 				return nil // cancelled or expired while we waited: pick again
 			}
-			// Only now, with the order locked, read the shortage and lock the stock row. A cancel
-			// that committed before this point is seen, so an order is never sacrificed for nothing.
 			shortfall, err := q.GetShortfall(ctx, store.GetShortfallParams{SkuID: skuID, LocationID: storeID})
 			if store.IsNotFound(err) || (err == nil && shortfall <= 0) {
 				more = false // nothing to resolve
@@ -348,9 +327,6 @@ func loseReservation(ctx context.Context, q *store.Queries, orderID, storeID, sk
 	})
 }
 
-// ResolveOversold finds store stock that is still over-reserved and resolves it (§13.5). Normally
-// Tx2 does this right after a sync; this catches the case where a sync failed after Tx1 and the
-// device never resent it. The sweeper calls it every round.
 func (s *Service) ResolveOversold(ctx context.Context) error {
 	rows, err := s.store.ListOversold(ctx)
 	if err != nil {

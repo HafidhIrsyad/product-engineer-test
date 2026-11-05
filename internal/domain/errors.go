@@ -1,11 +1,7 @@
-// Package domain is the core: types, statuses, pure rules, and every sentinel error.
-// It does no I/O and imports nothing from the other layers (ARCHITECTURE.md §4.2).
 package domain
 
 import "errors"
 
-// All sentinel errors live here. The store translates driver errors into these,
-// app returns them, and api/errors.go is the only place that maps them to HTTP (§16.1).
 var (
 	// ErrInvalidInput is wrapped with fmt.Errorf("%w: reason", ErrInvalidInput). → 422
 	ErrInvalidInput = errors.New("invalid input")
@@ -20,11 +16,8 @@ var (
 	ErrInvalidOrderStatus  = errors.New("invalid order status")
 	ErrOrderNotCancellable = errors.New("order not cancellable")
 
-	// ErrInvalidTransition: the move is not in the lifecycle of ARCHITECTURE.md §9.2.
 	ErrInvalidTransition = errors.New("invalid status transition")
 
-	// ErrStaleStatus: a conditional UPDATE matched no row because another process
-	// changed the status first (§9.3).
 	ErrStaleStatus = errors.New("status changed by another process")
 
 	ErrDeviceStoreMismatch = errors.New("device registered at another store")

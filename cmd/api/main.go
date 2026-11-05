@@ -48,7 +48,7 @@ func run() error {
 
 	var tracer pgx.QueryTracer
 	if cfg.IsLocal() {
-		tracer = logging.SQLTracer() // SQL query logs: local only (§5.2)
+		tracer = logging.SQLTracer()
 	}
 	st, err := store.Open(ctx, cfg.Database.URL, tracer)
 	if err != nil {
@@ -57,7 +57,7 @@ func run() error {
 	defer st.Close()
 
 	svc := app.NewService(st)
-	go svc.RunExpirySweeper(logger.WithContext(ctx), cfg.Sweeper.Interval) // single API instance (§12.7)
+	go svc.RunExpirySweeper(logger.WithContext(ctx), cfg.Sweeper.Interval)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTP.Port),

@@ -1,5 +1,3 @@
-// Package config loads application settings with viper.
-// Priority: environment variables (MGMI_*) > config.yaml > defaults (ARCHITECTURE.md §5.3).
 package config
 
 import (

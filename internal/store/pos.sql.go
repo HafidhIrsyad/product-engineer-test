@@ -72,8 +72,6 @@ type GetShortfallParams struct {
 	LocationID int64
 }
 
-// Positive when more is reserved than physically available. FOR UPDATE: called after the order is
-// locked (lock order orders, then stock_balance), so a cancel that committed meanwhile is seen.
 func (q *Queries) GetShortfall(ctx context.Context, arg GetShortfallParams) (int32, error) {
 	row := q.db.QueryRow(ctx, getShortfall, arg.SkuID, arg.LocationID)
 	var shortfall int32
@@ -129,9 +127,6 @@ type InsertPosTransactionParams struct {
 	PaymentMethod string
 }
 
-// ON CONFLICT DO NOTHING (no target) covers BOTH unique keys: the transaction id (a retry) and
-// (device_id, local_seq) (a device bug). A conflict inserts nothing, so the transaction stays usable.
-// A concurrent insert of the same id waits for the first to commit, then does nothing.
 func (q *Queries) InsertPosTransaction(ctx context.Context, arg InsertPosTransactionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertPosTransaction,
 		arg.ID,
@@ -216,8 +211,6 @@ type ListOversoldRow struct {
 	SkuID      int64
 }
 
-// Store stock where more is reserved than physically there: left over if a sync failed after its
-// sale was recorded and the device never resent it (§13.5). Re-checked under locks before acting.
 func (q *Queries) ListOversold(ctx context.Context) ([]ListOversoldRow, error) {
 	rows, err := q.db.Query(ctx, listOversold)
 	if err != nil {
@@ -255,7 +248,6 @@ type LockSerialsByCodesRow struct {
 	Status     domain.SerialStatus
 }
 
-// One query, ORDER BY id: serials are always locked in id order (ARCHITECTURE.md §12.4).
 func (q *Queries) LockSerialsByCodes(ctx context.Context, codes []string) ([]LockSerialsByCodesRow, error) {
 	rows, err := q.db.Query(ctx, lockSerialsByCodes, codes)
 	if err != nil {
@@ -287,8 +279,6 @@ const lockStoreOversell = `-- name: LockStoreOversell :exec
 SELECT pg_advisory_xact_lock(1001, $1::int)
 `
 
-// Only one oversell resolution per store at a time (§13.5). Held until the transaction ends.
-// Two-key form (class 1001, store id) so it cannot collide with another advisory lock user.
 func (q *Queries) LockStoreOversell(ctx context.Context, locationID int32) error {
 	_, err := q.db.Exec(ctx, lockStoreOversell, locationID)
 	return err
@@ -309,10 +299,6 @@ type PickOversellVictimParams struct {
 	LocationID int64
 }
 
-// The order that loses its stock: an UNPAID order before a paid one, then the newest (§13.5).
-// A customer who already paid is the last to lose. Not locked here: SELECT ... LIMIT 1
-// FOR UPDATE returns no row when the candidate is cancelled while waiting for the lock, even if other
-// candidates exist. The caller locks the order and re-checks its status instead.
 func (q *Queries) PickOversellVictim(ctx context.Context, arg PickOversellVictimParams) (int64, error) {
 	row := q.db.QueryRow(ctx, pickOversellVictim, arg.SkuID, arg.LocationID)
 	var id int64
@@ -370,8 +356,6 @@ type TransitionSerialParams struct {
 	FromStatus domain.SerialStatus
 }
 
-// No row (ErrNoRows) = the status changed since it was read (§9.3).
-// The first move to VERIFIED also stamps first_verified_at.
 func (q *Queries) TransitionSerial(ctx context.Context, arg TransitionSerialParams) (*time.Time, error) {
 	row := q.db.QueryRow(ctx, transitionSerial, arg.ToStatus, arg.ID, arg.FromStatus)
 	var first_verified_at *time.Time

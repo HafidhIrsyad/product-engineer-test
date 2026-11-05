@@ -10,9 +10,6 @@ import (
 	"github.com/HafidhIrsyad/product-engineer-test/internal/store"
 )
 
-// ExpireDue releases the reservation of every unpaid order past expires_at (ARCHITECTURE.md §12.7).
-// Each order gets its own transaction, like cancel: a conditional UPDATE decides, so an order that
-// was paid or cancelled meanwhile is skipped. It returns how many orders expired.
 func (s *Service) ExpireDue(ctx context.Context) (int, error) {
 	ids, err := s.store.ListExpiredOrderIDs(ctx)
 	if err != nil {
@@ -60,9 +57,6 @@ func (s *Service) expireOne(ctx context.Context, id int64) (bool, error) {
 	return done && err == nil, err
 }
 
-// RunExpirySweeper runs ExpireDue, then ResolveOversold, every interval until ctx ends. Run it in one goroutine of a
-// single API instance. A failed round is logged and the next one runs normally; correctness does
-// not depend on the sweeper, because PayOrder itself refuses an order past expires_at.
 func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

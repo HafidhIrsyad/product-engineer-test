@@ -25,9 +25,6 @@ type CountOtherScanDevicesParams struct {
 	DeviceID string
 }
 
-// Devices that scanned this unit AFTER it was sold. Shelf scans before the sale are what careful
-// shoppers do (PRODUCT_DEFENSE.md principle 1), so they never count towards a warning. A unit with
-// no sale event (e.g. stock at a partner, whose sales we do not see) therefore never warns by count.
 func (q *Queries) CountOtherScanDevices(ctx context.Context, arg CountOtherScanDevicesParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countOtherScanDevices, arg.SerialID, arg.DeviceID)
 	var column_1 int32
@@ -101,7 +98,6 @@ type GetSerialForVerifyRow struct {
 	RegionRadiusKm  *float64
 }
 
-// Locks the serial so two first scans cannot both count as "first" (ARCHITECTURE.md §10.2).
 func (q *Queries) GetSerialForVerify(ctx context.Context, code string) (GetSerialForVerifyRow, error) {
 	row := q.db.QueryRow(ctx, getSerialForVerify, code)
 	var i GetSerialForVerifyRow
@@ -184,9 +180,6 @@ type LeakageByPalletRow struct {
 	UnitsOutsideRegion int32
 }
 
-// Pallets whose scanned units turn up outside the distributor's region (ARCHITECTURE.md §8.4).
-// The threshold is relative to scan coverage: at least min_units AND at least min_ratio of the
-// pallet's scanned units.
 func (q *Queries) LeakageByPallet(ctx context.Context, arg LeakageByPalletParams) ([]LeakageByPalletRow, error) {
 	rows, err := q.db.Query(ctx, leakageByPallet, arg.MinUnits, arg.MinRatio)
 	if err != nil {

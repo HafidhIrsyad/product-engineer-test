@@ -19,7 +19,6 @@ WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at < now()
 RETURNING location_id
 `
 
-// 0 rows (ErrNoRows) = the order was paid or cancelled since it was listed: skip it (§12.7).
 func (q *Queries) ExpireOrder(ctx context.Context, id int64) (int64, error) {
 	row := q.db.QueryRow(ctx, expireOrder, id)
 	var location_id int64
@@ -73,7 +72,6 @@ type GetOrderItemsRow struct {
 	Qty     int32
 }
 
-// Ordered by sku_id: stock rows are always locked in this order (ARCHITECTURE.md §12.4).
 func (q *Queries) GetOrderItems(ctx context.Context, orderID int64) ([]GetOrderItemsRow, error) {
 	rows, err := q.db.Query(ctx, getOrderItems, orderID)
 	if err != nil {
@@ -166,9 +164,6 @@ type InsertOrderParams struct {
 	LocationID     int64
 }
 
-// ON CONFLICT DO NOTHING: a concurrent request with the same Idempotency-Key waits for the
-// first one to commit, then inserts nothing (0 rows) and the caller returns the existing order.
-// Payment window: 15 minutes (ARCHITECTURE.md §19).
 func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertOrder, arg.IdempotencyKey, arg.Channel, arg.LocationID)
 	var id int64
@@ -225,7 +220,6 @@ type LockOrderRow struct {
 	Status     domain.OrderStatus
 }
 
-// Row lock: a concurrent cancel waits here, then reads the new status (§12.5).
 func (q *Queries) LockOrder(ctx context.Context, id int64) (LockOrderRow, error) {
 	row := q.db.QueryRow(ctx, lockOrder, id)
 	var i LockOrderRow
@@ -238,7 +232,6 @@ UPDATE orders SET status = 'PAID', updated_at = now()
 WHERE id = $1 AND status = 'PENDING_PAYMENT' AND expires_at > now()
 `
 
-// Pay and expiry race is decided by this WHERE clause: only one wins (§12.7).
 func (q *Queries) PayOrder(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.Exec(ctx, payOrder, id)
 	if err != nil {

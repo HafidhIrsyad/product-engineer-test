@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// SerialLevel is the packaging level of a serial: Pallet → Carton → Unit (§8.2).
 type SerialLevel string
 
 const (
@@ -15,7 +14,6 @@ const (
 	LevelPallet SerialLevel = "PALLET"
 )
 
-// SerialStatus is the lifecycle state of a serial (§9).
 type SerialStatus string
 
 const (
@@ -34,9 +32,6 @@ var SerialStatuses = []SerialStatus{
 	SerialSold, SerialVerified, SerialQuarantine,
 }
 
-// allowed maps a status to the statuses it may move to (§9.2). Extra conditions, such as
-// the location type, are checked by the caller. The database guards against stale reads
-// with UPDATE ... WHERE status = $from (§9.3).
 var allowed = map[SerialStatus][]SerialStatus{
 	SerialProduced:    {SerialInWarehouse},
 	SerialInWarehouse: {SerialInTransit, SerialSold, SerialQuarantine},
@@ -52,7 +47,6 @@ func CanTransition(from, to SerialStatus) bool {
 	return slices.Contains(allowed[from], to)
 }
 
-// SerialCode is the random code printed in the QR: "MG" + 11 Crockford base32 characters (§8.1).
 type SerialCode string
 
 const (
