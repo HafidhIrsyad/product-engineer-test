@@ -52,6 +52,18 @@ func (s server) post(t *testing.T, path, key, body string) (int, map[string]any)
 	return status, out
 }
 
+func (s server) get(t *testing.T, path string) (int, map[string]any) {
+	t.Helper()
+	res, err := http.Get(s.url + path)
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	raw, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(raw, &out), "response must be JSON: %s", raw)
+	return res.StatusCode, out
+}
+
 func (s server) postRaw(t *testing.T, path, key, body string) (int, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, s.url+path, strings.NewReader(body))
@@ -117,6 +129,17 @@ func TestIntegration_OrderHTTP(t *testing.T) {
 			assert.Equal(t, http.StatusUnprocessableEntity, status, name)
 			assert.NotEmpty(t, errorCode(t, body), name)
 		}
+	})
+
+	t.Run("get returns the order, 404 when unknown", func(t *testing.T) {
+		status, body := s.get(t, "/v1/orders/1")
+		assert.Equal(t, http.StatusOK, status)
+		assert.Equal(t, "PENDING_PAYMENT", body["status"])
+		assert.EqualValues(t, 1, body["id"])
+
+		status, body = s.get(t, "/v1/orders/999")
+		assert.Equal(t, http.StatusNotFound, status)
+		assert.Equal(t, "ORDER_NOT_FOUND", errorCode(t, body))
 	})
 
 	t.Run("pay returns 200, and 200 again", func(t *testing.T) {

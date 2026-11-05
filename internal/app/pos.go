@@ -248,17 +248,9 @@ func recordSale(ctx context.Context, q *store.Queries, loc store.Location, t dom
 }
 
 func markSold(ctx context.Context, q *store.Queries, row *store.LockSerialsByCodesRow, storeID int64, txnID uuid.UUID) error {
-	n, err := q.TransitionSerial(ctx, store.TransitionSerialParams{ID: row.ID, FromStatus: domain.SerialInStock, ToStatus: domain.SerialSold})
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return domain.ErrStaleStatus // impossible while the row is locked: a bug
-	}
-	from, ref := domain.SerialInStock, txnID.String()
-	return q.InsertSerialEvent(ctx, store.InsertSerialEventParams{
-		SerialID: row.ID, FromStatus: &from, ToStatus: domain.SerialSold, LocationID: &storeID, RefType: "POS_TXN", RefID: &ref,
-	})
+	// A stale status is impossible while the row is locked: it would be a bug, so it surfaces as an error.
+	_, err := transitionSerial(ctx, q, row.ID, domain.SerialInStock, domain.SerialSold, &storeID, "POS_TXN", txnID.String())
+	return err
 }
 
 func recordMismatch(ctx context.Context, q *store.Queries, storeID int64, txnID uuid.UUID, serialID *int64, code string, lineNo int, issue domain.PosIssue) error {

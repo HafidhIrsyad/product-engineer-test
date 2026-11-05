@@ -35,6 +35,7 @@ curl -s localhost:8080/v1/verify -d '{"code":"MG99999999999","device_id":"phone-
 # Create an order (same Idempotency-Key = same order), pay it, cancel it
 curl -s localhost:8080/v1/orders -H 'Idempotency-Key: 11111111-1111-4111-8111-111111111111' \
   -d '{"channel":"D2C","location_code":"WH-JKT","items":[{"sku_code":"MGN-COLL-200","qty":2}]}'
+curl -s localhost:8080/v1/orders/1
 curl -s -X POST localhost:8080/v1/orders/1/pay
 curl -s -X POST localhost:8080/v1/orders/1/cancel
 

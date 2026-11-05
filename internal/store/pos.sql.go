@@ -49,6 +49,17 @@ func (q *Queries) GetPosTransaction(ctx context.Context, id uuid.UUID) (GetPosTr
 	return i, err
 }
 
+const getSerialStatus = `-- name: GetSerialStatus :one
+SELECT status FROM serial WHERE id = $1
+`
+
+func (q *Queries) GetSerialStatus(ctx context.Context, id int64) (domain.SerialStatus, error) {
+	row := q.db.QueryRow(ctx, getSerialStatus, id)
+	var status domain.SerialStatus
+	err := row.Scan(&status)
+	return status, err
+}
+
 const getShortfall = `-- name: GetShortfall :one
 SELECT (reserved - (on_hand - quarantine))::int AS shortfall
 FROM stock_balance
@@ -305,9 +316,13 @@ func (q *Queries) TouchHeartbeat(ctx context.Context, arg TouchHeartbeatParams) 
 	return result.RowsAffected(), nil
 }
 
-const transitionSerial = `-- name: TransitionSerial :execrows
-UPDATE serial SET status = $1, updated_at = now()
+const transitionSerial = `-- name: TransitionSerial :one
+UPDATE serial
+SET status = $1::serial_status,
+    first_verified_at = CASE WHEN $1::serial_status = 'VERIFIED' THEN now() ELSE first_verified_at END,
+    updated_at = now()
 WHERE id = $2 AND status = $3
+RETURNING first_verified_at
 `
 
 type TransitionSerialParams struct {
@@ -316,11 +331,11 @@ type TransitionSerialParams struct {
 	FromStatus domain.SerialStatus
 }
 
-// 0 rows = the status changed since it was read (§9.3).
-func (q *Queries) TransitionSerial(ctx context.Context, arg TransitionSerialParams) (int64, error) {
-	result, err := q.db.Exec(ctx, transitionSerial, arg.ToStatus, arg.ID, arg.FromStatus)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// No row (ErrNoRows) = the status changed since it was read (§9.3).
+// The first move to VERIFIED also stamps first_verified_at.
+func (q *Queries) TransitionSerial(ctx context.Context, arg TransitionSerialParams) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, transitionSerial, arg.ToStatus, arg.ID, arg.FromStatus)
+	var first_verified_at *time.Time
+	err := row.Scan(&first_verified_at)
+	return first_verified_at, err
 }

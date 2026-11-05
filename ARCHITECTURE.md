@@ -79,7 +79,7 @@
 
 ### 2.2 Prioritas fitur
 
-Prioritas agar mudah dipangkas bila waktu habis:
+Prioritas agar mudah dipangkas bila waktu habis. **Status: semua P0 sudah dibangun, termasuk expiry dan `make demo` (P1). Fulfill order (P1) belum dibangun; ship/receive dan `GET /v1/stock` (P2) hanya didesain, seperti `ListUnitsUnderContainer` di §8.3.**
 
 - **P0** = wajib (langsung diminta assignment)
 - **P1** = dibangun setelah semua P0 selesai; membantu demo dan cerita bisnis
@@ -310,13 +310,15 @@ product-engineer-test/            # github.com/HafidhIrsyad/product-engineer-tes
 │   ├── domain/                   # tipe, status, aturan murni, error. Tanpa I/O.
 │   │   ├── serial.go             #   SerialStatus, CanTransition, format kode serial
 │   │   ├── verify.go             #   aturan R1–R3, verdict, haversine
-│   │   ├── order.go              #   OrderStatus
-│   │   ├── pos.go                #   PayloadHash, hasil per transaksi POS
+│   │   ├── order.go              #   OrderStatus, Channel
+│   │   ├── stock.go              #   MovementReason, LocationType
+│   │   ├── pos.go                #   PosTxn, PayloadHash, Validate, ClassifyPosItem, status hasil POS
 │   │   └── errors.go             #   semua sentinel error
 │   ├── app/                      # use case = graf §16
 │   │   ├── service.go            #   Service (satu struct), Health
 │   │   ├── verify.go             #   Verify
-│   │   ├── order.go              #   CreateOrder, PayOrder, CancelOrder
+│   │   ├── order.go              #   CreateOrder, GetOrder, PayOrder, CancelOrder
+│   │   ├── serial.go             #   transitionSerial: CanTransition + UPDATE ... WHERE status = from + serial_event
 │   │   ├── expiry.go             #   ExpireDue, RunExpirySweeper
 │   │   ├── pos.go                #   SyncPOS (Tx1 + Tx2), Heartbeat
 │   │   └── stock.go              #   reserve, release, sellPOS: satu-satunya penulis stok
@@ -325,7 +327,6 @@ product-engineer-test/            # github.com/HafidhIrsyad/product-engineer-tes
 │   │   ├── queries/              #   *.sql sumber sqlc
 │   │   ├── migrate.go            #   Migrate(ctx, databaseURL)
 │   │   ├── store.go              #   Store: Open, InTx, Ping, Close
-│   │   ├── errors.go             #   IsNotFound (pgx.ErrNoRows); error pgx lain → error domain ditambah saat dibutuhkan
 │   │   └── db.go, models.go, *.sql.go   # HASIL SQLC: di-commit, tidak diedit manual
 │   ├── api/                      # HTTP
 │   │   ├── router.go             #   NewRouter: chi + middleware + semua route
@@ -693,6 +694,8 @@ WHERE id = sqlc.arg(id)
 -- RowsAffected == 0 → status sudah diubah proses lain → kembalikan ErrStaleStatus
 ```
 
+Keduanya dipasang di satu fungsi, `app/serial.go: transitionSerial`, yang dipakai POS sync dan verify, sehingga tidak ada jalur lain yang mengubah status serial. Galat yang keluar: `ErrInvalidTransition` (409 `INVALID_SERIAL_STATUS`) dan `ErrStaleStatus` (409 `SERIAL_STATUS_CHANGED`). T4 menguji siklus penuh, bacaan basi, dan balapan dua proses.
+
 Dua lapis ini saling melengkapi: Go menolak transisi yang **tidak sah**. DB menolak transisi yang **sudah basi** (status berubah sejak dibaca).
 
 ---
@@ -731,7 +734,7 @@ Response (asli, tetapi ada peringatan):
 ```json
 {
   "verdict": "GENUINE_WITH_WARNING",
-  "message": "Kode ini sudah pernah diverifikasi sebelumnya. Jika Anda baru membeli produk ini, hubungi layanan pelanggan.",
+  "message": "Produk ini asli, tetapi ada hal yang tidak biasa pada kodenya (misalnya sudah pernah dipindai di tempat lain). Jika Anda baru membeli produk ini, hubungi layanan pelanggan.",
   "first_verified_at": "2026-08-01T03:00:00Z",
   "scan_count": 7
 }
@@ -850,7 +853,7 @@ LEFT JOIN (
 WHERE sb.on_hand <> COALESCE(s.cnt, 0);
 ```
 
-Query ini dipakai di akhir setiap test integrasi. Di produksi bisa dijalankan sebagai job rekonsiliasi berkala.
+Pengecekan ini diimplementasikan sebagai `testdb.AssertInvariants` (I1 dan I2) dan dipanggil di akhir test integrasi yang mengubah stok. Di produksi bisa dijadikan job rekonsiliasi berkala.
 
 ### 11.3 Aturan menulis stok
 
@@ -1348,6 +1351,7 @@ Semua path berawalan `/v1`. Format error seragam:
 |---|---|---|---|---|---|
 | `POST` | `/v1/verify` | P0 | Verifikasi keaslian + anomali | 200 | 422 input tidak valid |
 | `POST` | `/v1/orders` | P0 | Buat order + reservasi | 201 (baru), 200 (idempotency key sama) | 409 `INSUFFICIENT_STOCK`; 422 (termasuk `UNKNOWN_LOCATION`, `UNKNOWN_SKU`) |
+| `GET` | `/v1/orders/{id}` | P0 | Lihat order dan statusnya | 200 | 404 `ORDER_NOT_FOUND` |
 | `POST` | `/v1/orders/{id}/pay` | P0 | Mock pembayaran | 200 (termasuk jika sudah dibayar) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_EXPIRED`, `INVALID_ORDER_STATUS` |
 | `POST` | `/v1/orders/{id}/cancel` | P0 | Batal + lepas stok | 200 (termasuk jika sudah batal/kedaluwarsa) | 404 `ORDER_NOT_FOUND`; 409 `ORDER_NOT_CANCELLABLE` |
 | `POST` | `/v1/pos/sync` | P0 | Rekonsiliasi transaksi offline | 200 (hasil per transaksi, urut `local_seq`) | 404 `STORE_NOT_FOUND`; 422 jika amplop body tidak valid. Transaksi yang rusak secara teknis tidak menggagalkan batch: hasilnya `REJECTED`. |
@@ -1385,7 +1389,7 @@ Setiap endpoint P0 digambar dulu sebagai **graf panggilan**, lalu kodenya dituli
 ```ts
 pgx / sqlc
   → pgx.ErrNoRows, CHECK 23514
-    → store/errors.go                 // IsNotFound; error driver lain → error domain bila dibutuhkan
+    → store.IsNotFound                // pgx.ErrNoRows; error driver lain tidak diterjemahkan (jadi 500)
   → 0 baris pada conditional UPDATE
     → app                             // hasil bisnis → error domain
       → domain/errors.go: ErrInsufficientStock, ErrOrderNotFound, ErrOrderExpired, ErrInvalidOrderStatus,
@@ -1438,7 +1442,7 @@ Production:
 POST /v1/orders (api)
   → decodeCreateOrder                // batas: Idempotency-Key, channel, location_code, items
   → app.CreateOrder
-    → GetOrderByIdempotencyKey       // sudah ada → kembalikan order itu
+    → GetOrderIDByIdempotencyKey     // sudah ada → kembalikan order itu
     → pgx.BeginFunc
       → GetLocationByCode, GetSKUsByCode
       → InsertOrder                  // expires_at = now() + 15 menit
@@ -1475,7 +1479,7 @@ Production:
 POST /v1/orders/{id}/pay (api)
   → app.PayOrder
     → PayOrder                       // satu conditional UPDATE (§12.7)
-    → GetOrderStatus                 // hanya jika 0 baris
+    → GetOrderView                  // hanya untuk membaca status (hasilnya dipakai jika 0 baris)
   → 200 OrderView
 
 POST /v1/orders/{id}/cancel (api)

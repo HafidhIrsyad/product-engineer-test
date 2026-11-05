@@ -20,6 +20,9 @@ var (
 	ErrInvalidOrderStatus  = errors.New("invalid order status")
 	ErrOrderNotCancellable = errors.New("order not cancellable")
 
+	// ErrInvalidTransition: the move is not in the lifecycle of ARCHITECTURE.md §9.2.
+	ErrInvalidTransition = errors.New("invalid status transition")
+
 	// ErrStaleStatus: a conditional UPDATE matched no row because another process
 	// changed the status first (§9.3).
 	ErrStaleStatus = errors.New("status changed by another process")

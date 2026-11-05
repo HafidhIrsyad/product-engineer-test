@@ -40,7 +40,7 @@ type VerifyBatch struct {
 
 const (
 	messageNotFound = "Kode ini tidak ditemukan. Produk mungkin tidak asli. Hubungi layanan pelanggan."
-	messageWarning  = "Kode ini sudah pernah diverifikasi sebelumnya. Jika Anda baru membeli produk ini, hubungi layanan pelanggan."
+	messageWarning  = "Produk ini asli, tetapi ada hal yang tidak biasa pada kodenya (misalnya sudah pernah dipindai di tempat lain). Jika Anda baru membeli produk ini, hubungi layanan pelanggan."
 )
 
 // Verify checks a scanned code and records the scan (§10.2, §16.2). Scanning never changes
@@ -71,18 +71,11 @@ func (s *Service) Verify(ctx context.Context, in VerifyInput) (VerifyView, error
 
 		firstVerified := row.FirstVerifiedAt
 		if row.Status == domain.SerialSold {
-			at, err := q.VerifySerial(ctx, row.ID)
+			at, err := transitionSerial(ctx, q, row.ID, domain.SerialSold, domain.SerialVerified, &row.LocationID, "SCAN", string(in.Code))
 			if err != nil {
 				return err
 			}
 			firstVerified = at
-			from, ref := domain.SerialSold, string(in.Code)
-			if err := q.InsertSerialEvent(ctx, store.InsertSerialEventParams{
-				SerialID: row.ID, FromStatus: &from, ToStatus: domain.SerialVerified,
-				LocationID: &row.LocationID, RefType: "SCAN", RefID: &ref,
-			}); err != nil {
-				return err
-			}
 		}
 
 		view = VerifyView{

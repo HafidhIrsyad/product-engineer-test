@@ -28,6 +28,8 @@ func TestClassify(t *testing.T) {
 		{domain.ErrOrderExpired, http.StatusConflict, "ORDER_EXPIRED"},
 		{domain.ErrInvalidOrderStatus, http.StatusConflict, "INVALID_ORDER_STATUS"},
 		{domain.ErrOrderNotCancellable, http.StatusConflict, "ORDER_NOT_CANCELLABLE"},
+		{domain.ErrInvalidTransition, http.StatusConflict, "INVALID_SERIAL_STATUS"},
+		{domain.ErrStaleStatus, http.StatusConflict, "SERIAL_STATUS_CHANGED"},
 		{domain.ErrDeviceStoreMismatch, http.StatusConflict, "DEVICE_STORE_MISMATCH"},
 		{errors.New("connection refused"), http.StatusInternalServerError, "INTERNAL_ERROR"},
 	}

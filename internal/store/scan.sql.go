@@ -203,17 +203,3 @@ func (q *Queries) LeakageByPallet(ctx context.Context, arg LeakageByPalletParams
 	}
 	return items, nil
 }
-
-const verifySerial = `-- name: VerifySerial :one
-UPDATE serial SET status = 'VERIFIED', first_verified_at = now(), updated_at = now()
-WHERE id = $1 AND status = 'SOLD'
-RETURNING first_verified_at
-`
-
-// First consumer scan after the sale: SOLD becomes VERIFIED.
-func (q *Queries) VerifySerial(ctx context.Context, id int64) (*time.Time, error) {
-	row := q.db.QueryRow(ctx, verifySerial, id)
-	var first_verified_at *time.Time
-	err := row.Scan(&first_verified_at)
-	return first_verified_at, err
-}

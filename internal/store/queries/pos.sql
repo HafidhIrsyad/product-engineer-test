@@ -34,10 +34,15 @@ WHERE code = ANY(sqlc.arg(codes)::text[])
 ORDER BY id
 FOR UPDATE;
 
--- name: TransitionSerial :execrows
--- 0 rows = the status changed since it was read (§9.3).
-UPDATE serial SET status = sqlc.arg(to_status), updated_at = now()
-WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status);
+-- name: TransitionSerial :one
+-- No row (ErrNoRows) = the status changed since it was read (§9.3).
+-- The first move to VERIFIED also stamps first_verified_at.
+UPDATE serial
+SET status = sqlc.arg(to_status)::serial_status,
+    first_verified_at = CASE WHEN sqlc.arg(to_status)::serial_status = 'VERIFIED' THEN now() ELSE first_verified_at END,
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status)
+RETURNING first_verified_at;
 
 -- name: InsertSerialEvent :exec
 INSERT INTO serial_event (serial_id, from_status, to_status, location_id, ref_type, ref_id)
@@ -73,3 +78,6 @@ WHERE o.location_id = sqlc.arg(location_id)
   AND o.status IN ('PENDING_PAYMENT', 'PAID')
 ORDER BY o.created_at DESC, o.id DESC
 LIMIT 1;
+
+-- name: GetSerialStatus :one
+SELECT status FROM serial WHERE id = $1;

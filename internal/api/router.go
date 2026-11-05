@@ -32,6 +32,7 @@ func NewRouter(svc *app.Service, logger zerolog.Logger, cfg config.HTTP) http.Ha
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/verify", h.verify)
 		r.Post("/orders", h.createOrder)
+		r.Get("/orders/{id}", h.getOrder)
 		r.Post("/orders/{id}/pay", h.payOrder)
 		r.Post("/orders/{id}/cancel", h.cancelOrder)
 		r.Post("/pos/sync", h.syncPOS)

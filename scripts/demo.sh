@@ -52,5 +52,7 @@ post /v1/orders '{"channel":"D2C","location_code":"'$STORE'","items":[{"sku_code
 ORDER_ID=$(sed -E 's/.*"id":([0-9]+).*/\1/' /tmp/demo.body)
 echo "cashier sale synced afterwards (the unit had already been sold in the shop):"
 post /v1/pos/sync "$(sync "$(sale "$(uuid)" 1002 MG00000000301 MGN-OMEGA-100)")"
-echo "the online customer tries to pay: the order lost its stock to the physical sale:"
+echo "the online order now (it lost its stock to the physical sale):"
+curl -sS "$BASE_URL/v1/orders/$ORDER_ID"; echo
+echo "the online customer tries to pay it anyway:"
 post "/v1/orders/$ORDER_ID/pay" ''

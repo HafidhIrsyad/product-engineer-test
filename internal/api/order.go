@@ -30,6 +30,20 @@ func (h *handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, view)
 }
 
+func (h *handler) getOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := orderID(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	view, err := h.svc.GetOrder(r.Context(), id)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
 func (h *handler) payOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := orderID(r)
 	if err != nil {

@@ -40,6 +40,10 @@ func classify(err error) (status int, code string) {
 		return http.StatusConflict, "INVALID_ORDER_STATUS"
 	case errors.Is(err, domain.ErrOrderNotCancellable):
 		return http.StatusConflict, "ORDER_NOT_CANCELLABLE"
+	case errors.Is(err, domain.ErrInvalidTransition):
+		return http.StatusConflict, "INVALID_SERIAL_STATUS"
+	case errors.Is(err, domain.ErrStaleStatus):
+		return http.StatusConflict, "SERIAL_STATUS_CHANGED"
 	case errors.Is(err, domain.ErrDeviceStoreMismatch):
 		return http.StatusConflict, "DEVICE_STORE_MISMATCH"
 	default:

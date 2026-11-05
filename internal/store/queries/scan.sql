@@ -30,12 +30,6 @@ SELECT COUNT(*)::int FROM scan_event WHERE serial_id = $1;
 INSERT INTO scan_event (serial_id, raw_code, device_id, lat, lng, verdict)
 VALUES (sqlc.arg(serial_id), sqlc.arg(raw_code), sqlc.arg(device_id), sqlc.arg(lat), sqlc.arg(lng), sqlc.arg(verdict));
 
--- name: VerifySerial :one
--- First consumer scan after the sale: SOLD becomes VERIFIED.
-UPDATE serial SET status = 'VERIFIED', first_verified_at = now(), updated_at = now()
-WHERE id = $1 AND status = 'SOLD'
-RETURNING first_verified_at;
-
 -- name: LeakageByPallet :many
 -- Pallets whose scanned units turn up outside the distributor's region (ARCHITECTURE.md §8.4).
 -- The threshold is relative to scan coverage: at least min_units AND at least min_ratio of the

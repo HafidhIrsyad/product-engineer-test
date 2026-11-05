@@ -122,6 +122,11 @@ func (s *Service) stockLines(ctx context.Context, items []OrderItem) ([]stockLin
 	return lines, nil
 }
 
+// GetOrder returns an order as the API shows it.
+func (s *Service) GetOrder(ctx context.Context, id int64) (OrderView, error) {
+	return loadView(ctx, s.store.Queries, id)
+}
+
 // PayOrder marks an order paid (mock payment). One conditional UPDATE decides, so it cannot
 // pay an order that expired or was cancelled meanwhile (§12.7).
 func (s *Service) PayOrder(ctx context.Context, id int64) (OrderView, error) {
